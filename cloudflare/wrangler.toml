@@ -5,7 +5,6 @@ compatibility_date = "2026-09-18"
 [assets]
 directory = "../lab"
 binding = "ASSETS"
-exclude = ["*.test.js"]
 
 [[d1_databases]]
 binding = "DB"
