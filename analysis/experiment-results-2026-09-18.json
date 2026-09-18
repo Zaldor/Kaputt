@@ -1,0 +1,35 @@
+{
+  "experiment": "K3-E1 Experimental Matrix",
+  "date": "2026-09-18",
+  "config": {
+    "target": 100,
+    "startingNtb": 1,
+    "games_random": 1000,
+    "games_strategist": 10
+  },
+  "random_vs_random": {
+    "K1": { "winRate_P0": 0.459, "turns_mean": 5.1, "hold_max": 1, "score_wins": "~5%", "kaputt_wins": "~95%", "ntb_mean": 9.0 },
+    "K3": { "winRate_P0": 0.476, "turns_mean": 16.5, "hold_max": 5, "score_wins": "~29%", "kaputt_wins": "~71%", "ntb_mean": 11.3 },
+    "K5": { "winRate_P0": 0.496, "turns_mean": 21.7, "hold_max": 8, "score_wins": "~74%", "kaputt_wins": "~26%", "ntb_mean": 11.6 }
+  },
+  "strategist2_vs_strategist3": {
+    "K1": { "winRate_v2": 0.60, "turns_mean": 13.6, "hold_max": 1, "attack_rate_v2": "33%", "ntb_mean": 9.9 },
+    "K3": { "winRate_v2": 0.60, "turns_mean": 13.9, "hold_max": 4, "attack_rate_v2": "51%", "ntb_mean": 12.7 },
+    "K5": { "winRate_v2": 0.70, "turns_mean": 16.7, "hold_max": 3, "attack_rate_v2": "56%", "ntb_mean": 14.2 }
+  },
+  "strategist3_vs_strategist3": {
+    "K1": { "turns_mean": 11.7, "hold_max": 1, "attack_rate": "54%", "ntb_mean": 10.4 },
+    "K3": { "note": "timed out (>600s for 10 games)" },
+    "K5": { "note": "timed out" }
+  },
+  "key_findings": [
+    "K=1: Very short games (~5 turns), nearly all Kaputt-limited. Hold max=1 (no attrition). Nearly no strategic texture.",
+    "K=3: Moderate length (~17 turns), ~29% score wins. Some hold chains (max=5). Promising middle ground.",
+    "K=5: Longest games (~22 turns), ~74% score wins. Max hold chain=8. Significant attrition warfare.",
+    "First player advantage: minimal in Random vs Random (~50-54%).",
+    "NtB distribution shifts higher with K=5 (more time in mid/high bands).",
+    "Strategist v3 is computationally expensive (~6-14s per game) — needs optimization for large-scale simulation.",
+    "v2 beats v3 in all K settings — v3 may be overly cautious.",
+    "K=1 eliminates attrition almost completely — confirms hypothesis that K changes strategic temperament."
+  ]
+}
