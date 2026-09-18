@@ -9,5 +9,5 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "kaputt-lab"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "986e5b8a-e0e5-43cd-8db3-48e629fe398a"
 migrations_dir = "migrations"
