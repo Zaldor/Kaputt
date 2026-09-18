@@ -36,8 +36,15 @@ Context matters: visible die, NtB, score gap, your Kaputt remaining, opponent Ka
 const PROVIDERS = {
   openai: {
     name: 'OpenAI',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o4-mini'],
+    models: ['gpt-4o', 'gpt-4o-mini'],
+    defaultModel: 'gpt-4o-mini',
     endpoint: 'https://api.openai.com/v1/chat/completions',
+    async listModels(apiKey) {
+      const resp = await fetch('https://api.openai.com/v1/models', { headers: { 'Authorization': `Bearer ${apiKey}` } });
+      if (!resp.ok) throw new Error('OpenAI models list failed: ' + resp.status);
+      const data = await resp.json();
+      return data.data.map(m => m.id).filter(id => id.includes('gpt') || id.includes('o4')).sort();
+    },
     buildRequest(apiKey, model, systemPrompt, userPrompt, temperature) {
       return {
         url: this.endpoint,
@@ -66,7 +73,15 @@ const PROVIDERS = {
   anthropic: {
     name: 'Anthropic',
     models: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
+    defaultModel: 'claude-sonnet-4-20250514',
     endpoint: 'https://api.anthropic.com/v1/messages',
+    async listModels(apiKey, proxyBase) {
+      const url = (proxyBase || '') + '/api/llm-proxy';
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'anthropic-models', url: 'https://api.anthropic.com/v1/models', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body: null }) });
+      if (!resp.ok) throw new Error('Anthropic models list failed: ' + resp.status);
+      const data = await resp.json();
+      return data.data.map(m => m.id).sort();
+    },
     buildRequest(apiKey, model, systemPrompt, userPrompt, temperature) {
       return {
         url: this.endpoint,
@@ -100,7 +115,15 @@ const PROVIDERS = {
   google: {
     name: 'Google Gemini',
     models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+    defaultModel: 'gemini-2.5-flash',
     endpointBase: 'https://generativelanguage.googleapis.com/v1beta/models',
+    async listModels(apiKey, proxyBase) {
+      const url = (proxyBase || '') + '/api/llm-proxy';
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'google-models', url: `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, headers: {}, body: null }) });
+      if (!resp.ok) throw new Error('Google models list failed: ' + resp.status);
+      const data = await resp.json();
+      return (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', '')).sort();
+    },
     buildRequest(apiKey, model, systemPrompt, userPrompt, temperature) {
       const url = `${this.endpointBase}/${model}:generateContent?key=${apiKey}`;
       const prompt = `${systemPrompt}\n\n${userPrompt}\n\nRespond with ONLY valid JSON: {"choice":"attack"|"defense","reasoning":"...","confidence":0.0-1.0}`;
@@ -267,11 +290,20 @@ function clearAllKeys() {
   saveConfig(cfg);
 }
 
+async function listModels(provider, proxyBase) {
+  const p = PROVIDERS[provider];
+  if (!p || !p.listModels) return p ? p.models : [];
+  const key = getApiKey(provider);
+  if (!key) return p.models;
+  try { return await p.listModels(key, proxyBase || ''); } catch { return p.models; }
+}
+
 window.KaputtLLM = {
   PROVIDERS,
   callLLM,
   formatResult,
   getAvailableProviders,
+  listModels,
   getApiKey, setApiKey,
   getModel, setModel,
   getCondition, setCondition,
