@@ -82,8 +82,10 @@ const bots = {
     choose: ({ a, n, A, D, p, opp, target, lim }) => {
       const clamp = (x) => Math.max(0, Math.min(1, x));
       const memo = new Map();
+      const attMemo = new Map();
       const MAX_DEPTH = 3;
       const attackability = (ntb) => {
+        if (attMemo.has(ntb)) return attMemo.get(ntb);
         let q = 0;
         for (let v = 1; v <= 6; v++) {
           let best = 0;
@@ -97,7 +99,7 @@ const bots = {
           }
           q += best;
         }
-        return q / 6;
+        const out = q / 6; attMemo.set(ntb, out); return out;
       };
       const baseAttackability = attackability(1);
       const pressureOf = (ntb) => clamp(1 - attackability(ntb) / Math.max(0.001, baseAttackability));

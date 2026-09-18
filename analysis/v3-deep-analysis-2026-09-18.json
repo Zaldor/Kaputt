@@ -1,0 +1,70 @@
+{
+  "experiment": "v3-vs-v3 Deep Analysis — K=1/K=3/K=5",
+  "date": "2026-09-18",
+  "hypothesis": "H0: High-NtB attrition contains meaningful contextual decisions. H1: HOLD becomes overwhelmingly dominant at high NtB.",
+  "config": {
+    "games_per_cell": 200,
+    "target": 100,
+    "startingNtb": 1,
+    "bot": "strategist3 (memoized attackability)"
+  },
+  "results": {
+    "K5": {
+      "games": 200,
+      "mean_turns": 19.0,
+      "attack_rate_both": 0.724,
+      "score_wins": 85,
+      "kaputt_wins": 115,
+      "ntb_mean": 18.7,
+      "ntb_bands": { "low": 962, "mid": 811, "high": 827, "danger": 1208 },
+      "hold_chains": { "max": 8, "count": 543, "mean": 3.0 },
+      "danger_pct": 31.7
+    },
+    "K3": {
+      "games": 200,
+      "mean_turns": 15.9,
+      "attack_rate_both": 0.653,
+      "score_wins": 89,
+      "kaputt_wins": 111,
+      "ntb_mean": 14.4,
+      "ntb_bands": { "low": 1049, "mid": 979, "high": 551, "danger": 607 },
+      "hold_chains": { "max": 4, "count": 553, "mean": 1.5 },
+      "danger_pct": 19.1
+    },
+    "K1": {
+      "games": 200,
+      "mean_turns": 11.7,
+      "attack_rate_both": 0.471,
+      "score_wins": 57,
+      "kaputt_wins": 143,
+      "ntb_mean": 10.5,
+      "ntb_bands": { "low": 1054, "mid": 771, "high": 311, "danger": 203 },
+      "hold_chains": { "max": 1, "count": 143, "mean": 1.0 },
+      "danger_pct": 7.2
+    }
+  },
+  "analysis": {
+    "verdict": "H0 SUPPORTED — attrition auction is real but not degenerative",
+    "evidence": [
+      "K=5: Hold chains up to 8 (mean 3.0) — multi-turn attrition auctions are real",
+      "K=5: Attack rate still 72.4% — HOLD is NOT overwhelmingly dominant even at K=5",
+      "K=5: 31.7% time in danger band — significant high-NtB gameplay exists",
+      "K=3: Max hold chain=4, mean=1.5 — meaningful attrition, reduced repetition",
+      "K=3: 19.1% danger time, 65.3% attack rate — good balance",
+      "K=1: Max hold chain=1, 47.1% attack rate — attrition eliminated, very cautious",
+      "First-player advantage: minimal (56-61% range, small sample)"
+    ],
+    "design_implications": [
+      "K=5 is NOT degenerative — the attrition auction creates real decisions",
+      "K=3 looks like the sweet spot — preserves meaningful attrition while reducing repetitive standoffs",
+      "K=1 removes too much strategic texture — not recommended",
+      "The 'intentional failure to hold NtB' mechanic is working as designed"
+    ],
+    "caveats": [
+      "Only 200 games per cell — need 1000+ for statistical confidence",
+      "Only v3-vs-v3 — need cross-bot comparisons",
+      "First-player advantage inconclusive with this sample size",
+      "Need per-state decision density analysis (are decisions context-dependent?)"
+    ]
+  }
+}

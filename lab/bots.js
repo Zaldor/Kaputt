@@ -42,8 +42,8 @@ window.KaputtBots=(()=>{
     // Dynamic pressure model. No fixed NtB threshold: pressure is measured by how much
     // the threshold suppresses the NEXT player's profitable attacks, while opportunity
     // measures what the current visible die can build from this state.
-    const clamp=x=>Math.max(0,Math.min(1,x)),memo=new Map(),MAX_DEPTH=3;
-    const attackability=ntb=>{let q=0;for(let v=1;v<=6;v++){let best=0;for(const action of ['attack','defense']){let ev=0;for(let h=1;h<=6;h++){const r=resolve(action,v,h,ntb);ev+=r.points-r.kaputt*6}best=Math.max(best,ev/6)}q+=best}return q/6};
+    const clamp=x=>Math.max(0,Math.min(1,x)),memo=new Map(),attMemo=new Map(),MAX_DEPTH=3;
+    const attackability=ntb=>{if(attMemo.has(ntb))return attMemo.get(ntb);let q=0;for(let v=1;v<=6;v++){let best=0;for(const action of ['attack','defense']){let ev=0;for(let h=1;h<=6;h++){const r=resolve(action,v,h,ntb);ev+=r.points-r.kaputt*6}best=Math.max(best,ev/6)}q+=best}const out=q/6;attMemo.set(ntb,out);return out};
     const baseAttackability=attackability(1),pressureOf=ntb=>clamp(1-attackability(ntb)/Math.max(.001,baseAttackability));
     const leaf=(ms,mk,es,ek,ntb)=>{
       if(ms>=target||ek>=lim)return 1;if(es>=target||mk>=lim)return 0;
