@@ -19,7 +19,7 @@ function mulberry32(seed) {
 }
 
 /** Create a dice roller. If seed is provided, uses deterministic PRNG; otherwise Math.random. */
-export function createRng(seed) {
+function createRng(seed) {
   if (seed === undefined || seed === null) {
     return () => 1 + Math.floor(Math.random() * 6);
   }
@@ -32,7 +32,7 @@ export function createRng(seed) {
 const EXTREME_PAIRS = new Set(['1,6', '6,1']);
 
 /** Check if dice form an Extreme pair (1+6 / 6+1 in any order). */
-export function isExtreme(a, b) {
+function isExtreme(a, b) {
   return EXTREME_PAIRS.has(a + ',' + b);
 }
 
@@ -46,7 +46,7 @@ export function isExtreme(a, b) {
  * @returns {{ extreme: boolean, value: number, points: number, kaputt: boolean,
  *             nextNtb: number, success: boolean }}
  */
-export function resolve(action, visible, hidden, ntb) {
+function resolve(action, visible, hidden, ntb) {
   if (action !== 'attack' && action !== 'defense') {
     throw new Error('action must be "attack" or "defense"');
   }
@@ -94,7 +94,7 @@ export function resolve(action, visible, hidden, ntb) {
  * @param {'attack'|'defense'} action - Action to evaluate.
  * @returns {{ success: number, kaputt: number, points: number, nextNtb: number, extreme: number }}
  */
-export function conditionalStats(visible, ntb, action) {
+function conditionalStats(visible, ntb, action) {
   let success = 0, kaputt = 0, points = 0, nextNtb = 0, extreme = 0;
   for (let h = 1; h <= 6; h++) {
     const r = resolve(action, visible, h, ntb);
@@ -116,7 +116,7 @@ export function conditionalStats(visible, ntb, action) {
 // ---------- Game Engine (stateful match) ----------
 
 /** @enum {string} */
-export const Phase = Object.freeze({
+const Phase = Object.freeze({
   IDLE: 'idle',
   ROLLING: 'rolling',
   ROLLED: 'rolled',
@@ -135,7 +135,7 @@ export const Phase = Object.freeze({
  * @param {number|string} [config.seed] - PRNG seed for deterministic play.
  * @param {number} [config.playerCount=2] - Number of players (currently always 2).
  */
-export function createMatch(config = {}) {
+function createMatch(config = {}) {
   const target = config.target ?? 100;
   const kaputtLimit = config.kaputtLimit ?? 5;
   const startingNtb = config.startingNtb ?? 1;
@@ -454,16 +454,14 @@ export function createMatch(config = {}) {
   };
 }
 
-// ---------- CommonJS compatibility (for Node.js tests) ----------
+// ---------- CommonJS (Node) + Browser global compatibility ----------
 
-/* global module */
+const KaputtEngine = { createRng, isExtreme, resolve, conditionalStats, createMatch, Phase };
+
+/* global module, window */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    createRng,
-    isExtreme,
-    resolve,
-    conditionalStats,
-    createMatch,
-    Phase,
-  };
+  module.exports = KaputtEngine;
+}
+if (typeof window !== 'undefined') {
+  window.KaputtEngine = KaputtEngine;
 }

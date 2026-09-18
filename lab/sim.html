@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaputt! Lab — SIMULATE</title>
+<style>
+:root{font-family:system-ui,sans-serif;color-scheme:dark;background:#101114;color:#f4f4f5;--o:#ff7a1a;--g:#4ade80;--r:#ef4444}
+*{box-sizing:border-box}body{margin:0;padding:16px;max-width:1100px;margin:auto}
+.card{background:#191b20;border:1px solid #30333b;border-radius:14px;padding:15px;margin-top:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:.2em 0}h2{margin:0 0 .6em;font-size:18px}.accent{color:var(--o)}.muted{color:#a6abb5;font-size:13px}
+.nav{display:flex;gap:8px}.nav a{color:var(--o);text-decoration:none;padding:6px 12px;border:1px solid #444955;border-radius:8px;font-size:13px}.nav a:hover{background:#23262d}.nav a.active{background:var(--o);color:#111;border-color:var(--o)}
+.controls{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+label{display:grid;gap:4px;font-size:12px;color:#a6abb5}input,select{font:inherit;border-radius:8px;border:1px solid #444955;padding:8px 10px;background:#23262d;color:#fff}
+button{font:inherit;border-radius:10px;border:1px solid #444955;padding:10px 14px;background:#23262d;color:#fff;cursor:pointer;min-height:40px}
+button.primary{background:var(--o);color:#111;border-color:var(--o);font-weight:700}button:disabled{opacity:.4;cursor:not-allowed}
+.progress{margin:12px 0}.progress-bar{height:8px;background:#292c33;border-radius:4px;overflow:hidden}.progress-fill{height:100%;background:var(--o);transition:width .15s}
+.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.metric{padding:12px;background:#121419;border:1px solid #30333b;border-radius:10px}.metric .label{font-size:11px;color:#a6abb5;text-transform:uppercase;letter-spacing:.05em}.metric .value{font-size:24px;font-weight:800;margin-top:2px}.metric .sub{font-size:12px;color:#a6abb5;margin-top:2px}
+.bar-chart{display:flex;align-items:flex-end;gap:4px;height:120px;margin:12px 0}.bar{flex:1;background:var(--o);border-radius:4px 4px 0 0;min-width:20px;position:relative;transition:height .3s}.bar .bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10px;color:#a6abb5;white-space:nowrap}
+.matrix-table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}.matrix-table th,.matrix-table td{padding:6px 8px;border:1px solid #30333b;text-align:right}.matrix-table th{background:#23262d;color:#a6abb5;font-weight:600;text-align:center}.matrix-table td:first-child{text-align:left;color:#a6abb5}
+.log{max-height:200px;overflow-y:auto;font-size:12px;color:#a6abb5;font-family:monospace;background:#121419;padding:10px;border-radius:8px;border:1px solid #30333b;white-space:pre-wrap}
+.hidden{display:none}
+</style></head><body>
+<header>
+<div><div class="muted">K3-E1 · experimental platform</div><h1>KAPUTT! <span class="accent">SIMULATE</span></h1></div>
+<nav class="nav"><a href="index.html">PLAY</a><a href="simulate.html" class="active">SIMULATE</a></nav>
+</header>
+
+<div class="card">
+<h2>Experiment Controls</h2>
+<div class="controls">
+  <label>Bot A<select id="botA"></select></label>
+  <label>Bot B<select id="botB"></select></label>
+  <label>Games<select id="games"><option value="100">100</option><option value="1000" selected>1,000</option><option value="10000">10,000</option><option value="custom">Custom</option></select></label>
+  <label>Custom count<input id="customGames" type="number" min="1" value="1000" disabled></label>
+  <label>Target score<input id="target" type="number" min="1" value="100"></label>
+  <label>Kaputt limit<select id="klimit"><option value="1">K=1</option><option value="3">K=3</option><option value="5" selected>K=5</option></select></label>
+  <label>Starting NtB<input id="startNtb" type="number" min="0" value="1"></label>
+  <label>Seed<input id="seed" type="number" min="0" value="0"></label>
+</div>
+<div style="display:flex;gap:10px;align-items:center">
+  <button class="primary" id="run">RUN EXPERIMENT</button>
+  <button id="runMatrix">RUN MATRIX (K=1,3,5)</button>
+  <button id="export" disabled>Export JSON</button>
+  <span id="status" class="muted"></span>
+</div>
+</div>
+
+<div class="card progress hidden" id="progressCard">
+  <div style="display:flex;justify-content:space-between"><span id="progressLabel">Running...</span><span id="progressPct" class="muted">0%</span></div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0"></div></div>
+</div>
+
+<div id="resultsArea" class="hidden">
+<div class="card">
+  <h2>Results</h2>
+  <div class="results" id="metrics"></div>
+</div>
+
+<div class="card">
+  <h2>NtB Distribution</h2>
+  <div class="bar-chart" id="ntbChart"></div>
+</div>
+
+<div class="card">
+  <h2>Key Ratios</h2>
+  <table class="matrix-table" id="ratioTable"></table>
+</div>
+
+<div class="card">
+  <h2>K Matrix (K=1 vs K=3 vs K=5)</h2>
+  <table class="matrix-table" id="matrixTable"></table>
+</div>
+
+<div class="card">
+  <h2>Event Log</h2>
+  <div class="log" id="log"></div>
+</div>
+</div>
+
+<script src="./bots.js"></script>
+<script src="./engine.js"></script>
+<script src="./simulator.js"></script>
+<script>
+(() => {
+  const $=id=>document.getElementById(id);
+  const bots = window.KaputtBots.list();
+  const botSelects = [$('botA'), $('botB')];
+  for (const sel of botSelects) {
+    for (const b of bots) {
+      const o = document.createElement('option');
+      o.value = b.id; o.textContent = b.label;
+      sel.appendChild(o);
+    }
+  }
+  if (bots.length > 1) $('botB').selectedIndex = 1;
+
+  $('games').addEventListener('change', () => {
+    $('customGames').disabled = $('games').value !== 'custom';
+  });
+
+  function getGameCount() {
+    const v = $('games').value;
+    return v === 'custom' ? Math.max(1, +$('customGames').value) : +v;
+  }
+
+  let lastResults = null;
+
+  function log(msg) {
+    $('log').textContent = new Date().toLocaleTimeString() + ' ' + msg + '\n' + $('log').textContent;
+  }
+
+  function showProgress(completed, total) {
+    $('progressCard').classList.remove('hidden');
+    const pct = Math.round(100 * completed / total);
+    $('progressLabel').textContent = `Running ${completed} / ${total}...`;
+    $('progressPct').textContent = pct + '%';
+    $('progressFill').style.width = pct + '%';
+  }
+
+  function showResults(result) {
+    lastResults = result;
+    $('resultsArea').classList.remove('hidden');
+    $('export').disabled = false;
+    const m = result.metrics;
+    const c = result.config;
+
+    $('metrics').innerHTML = '';
+    function addMetric(label, value, sub) {
+      const d = document.createElement('div');
+      d.className = 'metric';
+      d.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>${sub ? '<div class="sub">' + sub + '</div>' : ''}`;
+      $('metrics').appendChild(d);
+    }
+
+    addMetric(`${c.botA} win rate`, (m.winRate[c.botA] * 100).toFixed(1) + '%', `${m.wins[c.botA]} / ${m.sampleSize}`);
+    addMetric(`${c.botB} win rate`, (m.winRate[c.botB] * 100).toFixed(1) + '%', `${m.wins[c.botB]} / ${m.sampleSize}`);
+    addMetric('Mean turns', m.turns.mean.toFixed(1), `Total: ${m.turns.total}`);
+    addMetric('Attack success', (m.attackSuccessRate * 100).toFixed(1) + '%');
+    addMetric('Kaputt rate', (m.kaputtRate * 100).toFixed(1) + '%', 'of attacks');
+    addMetric('Mean NtB', m.ntb.mean.toFixed(1));
+    addMetric('Max hold chain', m.holdChains.max, `${m.holdChains.totalChains} chains total`);
+    addMetric('Extremes / game', m.extremes.mean.toFixed(2));
+    addMetric('Lead changes / game', m.leadChanges.mean.toFixed(1));
+    addMetric('First player WR', (m.firstPlayerAdvantage.rate * 100).toFixed(1) + '%');
+    addMetric('Score target wins', m.terminalCause.scoreTarget);
+    addMetric('Kaputt limit wins', m.terminalCause.kaputtLimit);
+
+    // NtB chart
+    const bands = m.ntb.bands;
+    const maxB = Math.max(bands.low, bands.mid, bands.high, bands.danger, 1);
+    $('ntbChart').innerHTML = '';
+    for (const [label, val] of [['Low (0-6)', bands.low], ['Mid (7-15)', bands.mid], ['High (16-25)', bands.high], ['Danger (26+)', bands.danger]]) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.height = Math.round(100 * val / maxB) + '%';
+      bar.innerHTML = `<div class="bar-label">${label}<br>${val}</div>`;
+      $('ntbChart').appendChild(bar);
+    }
+
+    // Ratio table
+    const rt = $('ratioTable');
+    rt.innerHTML = '<tr><th></th><th>' + c.botA + '</th><th>' + c.botB + '</th></tr>';
+    const rows = [
+      ['Attack rate', (m.actions[c.botA + '_attack_rate'] * 100).toFixed(1) + '%', (m.actions[c.botB + '_attack_rate'] * 100).toFixed(1) + '%'],
+      ['Attacks', m.actions[c.botA + '_attacks'], m.actions[c.botB + '_attacks']],
+      ['Defenses', m.actions[c.botA + '_defenses'], m.actions[c.botB + '_defenses']],
+      ['Mean score', m.scores[c.botA + '_mean'].toFixed(1), m.scores[c.botB + '_mean'].toFixed(1)],
+      ['Mean Kaputt', m.kaputt[c.botA + '_mean'].toFixed(2), m.kaputt[c.botB + '_mean'].toFixed(2)],
+    ];
+    for (const [label, a, b] of rows) {
+      rt.innerHTML += `<tr><td>${label}</td><td>${a}</td><td>${b}</td></tr>`;
+    }
+
+    log(`Experiment complete: ${m.sampleSize} games in ${result.elapsed}ms`);
+  }
+
+  $('run').addEventListener('click', () => {
+    const botA = $('botA').value, botB = $('botB').value;
+    const games = getGameCount();
+    $('run').disabled = true;
+    $('status').textContent = 'Running...';
+    $('log').textContent = '';
+
+    log(`Starting: ${botA} vs ${botB}, ${games} games, K=${$('klimit').value}, target=${$('target').value}`);
+
+    setTimeout(() => {
+      try {
+        const result = window.KaputtSimulator.runExperiment({
+          botA, botB, games,
+          target: +$('target').value,
+          kaputtLimit: +$('klimit').value,
+          startingNtb: +$('startNtb').value,
+          baseSeed: +$('seed').value,
+          onProgress: showProgress,
+        });
+        showResults(result);
+      } catch (e) {
+        log('ERROR: ' + e.message);
+        $('status').textContent = 'Error: ' + e.message;
+      }
+      $('run').disabled = false;
+      $('status').textContent = '';
+    }, 50);
+  });
+
+  $('runMatrix').addEventListener('click', () => {
+    const botA = $('botA').value, botB = $('botB').value;
+    const games = getGameCount();
+    $('runMatrix').disabled = true;
+    $('status').textContent = 'Running matrix...';
+    $('log').textContent = '';
+
+    log(`Matrix: ${botA} vs ${botB}, K=1/3/5, ${games} games each`);
+
+    setTimeout(() => {
+      try {
+        const results = window.KaputtSimulator.runMatrix({
+          matchups: [[botA, botB]],
+          kValues: [1, 3, 5],
+          games,
+          target: +$('target').value,
+          baseSeed: +$('seed').value,
+          onProgress: showProgress,
+        });
+
+        $('resultsArea').classList.remove('hidden');
+        $('export').disabled = false;
+
+        // Show last experiment's detailed results
+        const keys = Object.keys(results);
+        const lastKey = keys[keys.length - 1];
+        showResults(results[lastKey]);
+
+        // K matrix table
+        const mt = $('matrixTable');
+        mt.innerHTML = '<tr><th></th><th>K=1</th><th>K=3</th><th>K=5</th></tr>';
+        const metrics = ['winRate_' + botA, 'winRate_' + botB, 'turns_mean', 'attackSuccessRate', 'kaputtRate', 'holdChains_max', 'ntb_mean', 'firstPlayerAdvantage_rate'];
+        const labels = [botA + ' win %', botB + ' win %', 'Mean turns', 'Attack success %', 'Kaputt rate %', 'Max hold chain', 'Mean NtB', 'First player WR %'];
+
+        for (let i = 0; i < metrics.length; i++) {
+          let row = `<tr><td>${labels[i]}</td>`;
+          for (const k of [1, 3, 5]) {
+            const key = `${botA}-vs-${botB}-K${k}`;
+            const m = results[key].metrics;
+            let val;
+            if (metrics[i] === 'winRate_' + botA) val = (m.winRate[botA] * 100).toFixed(1);
+            else if (metrics[i] === 'winRate_' + botB) val = (m.winRate[botB] * 100).toFixed(1);
+            else if (metrics[i] === 'turns_mean') val = m.turns.mean.toFixed(1);
+            else if (metrics[i] === 'attackSuccessRate') val = (m.attackSuccessRate * 100).toFixed(1);
+            else if (metrics[i] === 'kaputtRate') val = (m.kaputtRate * 100).toFixed(1);
+            else if (metrics[i] === 'holdChains_max') val = m.holdChains.max;
+            else if (metrics[i] === 'ntb_mean') val = m.ntb.mean.toFixed(1);
+            else if (metrics[i] === 'firstPlayerAdvantage_rate') val = (m.firstPlayerAdvantage.rate * 100).toFixed(1);
+            row += `<td>${val}</td>`;
+          }
+          row += '</tr>';
+          mt.innerHTML += row;
+        }
+
+        lastResults = { matrix: results };
+      } catch (e) {
+        log('ERROR: ' + e.message);
+        $('status').textContent = 'Error: ' + e.message;
+      }
+      $('runMatrix').disabled = false;
+      $('status').textContent = '';
+    }, 50);
+  });
+
+  $('export').addEventListener('click', () => {
+    if (!lastResults) return;
+    const data = JSON.stringify(lastResults, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kaputt-experiment-' + Date.now() + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+})();
+</script>
+</body></html>
