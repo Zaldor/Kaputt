@@ -1,27 +1,29 @@
-# Kaputt! 3.0 Lab
+# Kaputt! 3.0 Vs Lab
 
-A dependency-free HTML/JavaScript playable rules laboratory for K3-E1.
+Dependency-free HTML/JavaScript competitive playtest bench for K3-E1.
 
-Open `index.html` in any modern browser. No build step or server is required.
+Open `index.html` in any modern browser. No build step is required.
 
-## Purpose
+## Current experiment
 
-This is deliberately halfway between a game prototype and an instrumented test bench.
+The Lab now tests whether an opponent, score pressure and losing pressure change the Attack / Defense psychology.
 
-It provides:
+- Human vs Human on the same device, alternating turns with a pass-device privacy screen.
+- Human vs Computer Bot.
+- Bot profiles: Random, Aggressive, Safe, EV Score and transparent State-aware heuristic.
+- Shared NtB carried between players.
+- Individual score and Kaputt counters.
+- Test baseline: first to 100 points wins; reaching 5 Kaputt loses. Both thresholds are editable.
+- Immediate match-end detection and rematch.
+- PLAY view hides conditional decision statistics.
+- LAB view exposes exact conditional Attack / Defense metrics without recommending a move.
+- Match telemetry includes turns, Extremes, lead changes, per-player A/D counts, decision time and full JSON history.
+- Bot choice rationale is shown only after the bot has committed.
 
-- hidden 2d6 turn flow;
-- first-die reveal;
-- binding Attack / Defense declaration;
-- K3-E1 Extreme resolution;
-- editable NtB, score and Kaputt state;
-- exact conditional probabilities after the first reveal;
-- expected immediate points and expected next NtB;
-- session telemetry and event log;
-- JSON export for later analysis.
+## Frozen K3-E1 resolution
 
-The probability panel is intentionally descriptive: it does not recommend an action because strategic utility depends on the game mode.
+The dice engine is unchanged: hidden 2d6, reveal one, irrevocably choose Attack or Defense, then reveal the second. Attack uses product and must strictly beat NtB; failed Attack causes Kaputt. Defense uses sum, scores the higher die, never causes Kaputt and sets NtB to the sum. Extreme is only 1+6 / 6+1: Attack resolves to 36; Defense resolves to 2 and scores 1. Doubles are normal.
 
-## Current limitation
+## Experimental status
 
-This is a core-engine lab, not yet a complete implementation of Cooperative / Vs / King of the Hill / Battle Royale. Those modes should be added only after their 3.0 rules are frozen.
+The competitive victory conditions are a test baseline, not yet frozen 3.0 rules. Fortune Points and other game modes are intentionally excluded from this experiment.
