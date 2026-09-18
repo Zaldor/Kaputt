@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaputt! 3.0 Lab — K3-E1</title>
+<style>
+:root{font-family:system-ui,sans-serif;color-scheme:dark;background:#101114;color:#f4f4f5}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:980px;margin:auto}
+header,.grid,.actions,.dice,.stats{display:flex;gap:12px;flex-wrap:wrap}.card{background:#191b20;border:1px solid #30333b;border-radius:14px;padding:16px}
+header{justify-content:space-between;align-items:center}.grid{margin-top:14px}.grid>.card{flex:1 1 260px}
+.die{width:88px;height:88px;border-radius:16px;background:#f4f4f5;color:#111;display:grid;place-items:center;font-size:42px;font-weight:800}
+.hidden{background:#292c33;color:#8c919d}.accent{color:#ff7a1a}.muted{color:#a6abb5}
+button,input,select{font:inherit;border-radius:10px;border:1px solid #444955;padding:10px 12px;background:#23262d;color:#fff}
+button{cursor:pointer;min-height:44px}button.primary{background:#ff7a1a;color:#111;border-color:#ff7a1a;font-weight:800}button:disabled{opacity:.4;cursor:not-allowed}
+label{display:grid;gap:6px;font-size:13px;color:#a6abb5}.big{font-size:30px;font-weight:800}.log{max-height:260px;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px;border-bottom:1px solid #30333b;text-align:right}td:first-child,th:first-child{text-align:left}
+</style>
+</head>
+<body>
+<header><div><div class="muted">K3-E1 · development bench</div><h1 style="margin:.2em 0">KAPUTT! <span class="accent">3.0 Lab</span></h1></div><button id="reset">Nuova sessione</button></header>
+<div class="grid">
+<section class="card"><div class="stats"><label>NtB<input id="ntb" type="number" min="0" max="99" value="1"></label><label>Punti<input id="score" type="number" min="0" value="0"></label><label>Kaputt<input id="kaputts" type="number" min="0" value="0"></label></div><p class="muted">Lancia nascosto, rivela un dado, scegli, poi rivela il secondo.</p><div class="dice"><div id="d1" class="die hidden">?</div><div id="d2" class="die hidden">?</div></div><div class="actions" style="margin-top:14px"><button class="primary" id="roll">Lancia 2d6</button><button id="reveal1" disabled>Rivela primo</button><button id="attack" disabled>ATTACCO ×</button><button id="defense" disabled>DIFESA +</button><button id="reveal2" disabled>Rivela secondo</button></div><p id="status" aria-live="polite">Pronto.</p></section>
+<section class="card"><div class="muted">Banco di prova · stato corrente</div><div id="decision" class="big">—</div><p id="prob" class="muted">Dopo la prima rivelazione mostrerò le probabilità esatte delle due scelte.</p><table><tbody id="matrix"></tbody></table></section>
+</div>
+<div class="grid"><section class="card"><div class="muted">Session telemetry</div><div id="telemetry"></div><button id="export">Esporta JSON sessione</button></section><section class="card"><div class="muted">Event log</div><div id="log" class="log">Sessione iniziata.</div></section></div>
+<script>
+(()=>{
+const $=id=>document.getElementById(id), R=()=>1+Math.floor(Math.random()*6);
+let s={phase:'idle',dice:[],visible:null,choice:null,turns:0,extremes:0,attacks:0,defenses:0,attackFails:0,history:[]};
+function extreme(a,b){return (a===1&&b===6)||(a===6&&b===1)}
+function resolve(choice,a,b,ntb){
+ const ex=extreme(a,b);
+ if(choice==='attack'){const value=ex?36:a*b,ok=value>ntb;return {ex,value,points:ok?value:0,kaputt:!ok,next:ok?value:ntb,ok}}
+ const value=ex?2:a+b,points=ex?1:Math.max(a,b);return {ex,value,points,kaputt:false,next:value,ok:value>ntb}
+}
+function stats(a,ntb,choice){let os=[];for(let b=1;b<=6;b++)os.push(resolve(choice,a,b,ntb));return {success:os.filter(o=>o.ok).length/6,kaputt:os.filter(o=>o.kaputt).length/6,points:os.reduce((x,o)=>x+o.points,0)/6,next:os.reduce((x,o)=>x+o.next,0)/6,extreme:os.filter(o=>o.ex).length/6}}
+function pct(x){return (x*100).toFixed(1)+'%'} function n(x){return x.toFixed(2)}
+function log(t){$('log').textContent=t+'\n'+$('log').textContent}
+function render(){
+ $('reveal1').disabled=s.phase!=='rolled';$('attack').disabled=s.phase!=='first';$('defense').disabled=s.phase!=='first';$('reveal2').disabled=s.phase!=='chosen';
+ $('d1').textContent=s.phase==='idle'||s.phase==='rolled'?'?':s.dice[0];$('d1').className='die '+((s.phase==='idle'||s.phase==='rolled')?'hidden':'');
+ $('d2').textContent=s.phase==='resolved'||s.phase==='second'?s.dice[1]:'?';$('d2').className='die '+((s.phase==='resolved'||s.phase==='second')?'':'hidden');
+ $('decision').textContent=s.choice?s.choice.toUpperCase():'—';
+ $('telemetry').innerHTML='<p>Turni: <b>'+s.turns+'</b> · Estremi: <b>'+s.extremes+'</b><br>Attacchi: <b>'+s.attacks+'</b> · Difese: <b>'+s.defenses+'</b> · Attacchi falliti: <b>'+s.attackFails+'</b></p>';
+ if(s.phase==='first'||s.phase==='chosen'){const ntb=+($('ntb').value||0),a=s.dice[0],A=stats(a,ntb,'attack'),D=stats(a,ntb,'defense');
+ $('prob').textContent='Dado visibile '+a+' · NtB '+ntb;
+ $('matrix').innerHTML='<tr><th></th><th>Attacco</th><th>Difesa</th></tr><tr><td>P(successo > NtB)</td><td>'+pct(A.success)+'</td><td>'+pct(D.success)+'</td></tr><tr><td>P(Kaputt)</td><td>'+pct(A.kaputt)+'</td><td>0%</td></tr><tr><td>EV punti</td><td>'+n(A.points)+'</td><td>'+n(D.points)+'</td></tr><tr><td>EV prossimo NtB</td><td>'+n(A.next)+'</td><td>'+n(D.next)+'</td></tr><tr><td>P(Estremo)</td><td>'+pct(A.extreme)+'</td><td>'+pct(D.extreme)+'</td></tr>';
+ } else if(s.phase==='idle'||s.phase==='resolved'){$('matrix').innerHTML='';$('prob').textContent='Dopo la prima rivelazione mostrerò le probabilità esatte delle due scelte.'}
+}
+$('roll').addEventListener('click',()=>{s.dice=[R(),R()];s.choice=null;s.phase='rolled';$('status').textContent='Dadi lanciati e nascosti.';render()});
+$('reveal1').addEventListener('click',()=>{s.phase='first';$('status').textContent='Primo dado: '+s.dice[0]+'. Scegli Attacco o Difesa.';render()});
+function choose(c){s.choice=c;s.phase='chosen';$('status').textContent=(c==='attack'?'Attacco':'Difesa')+' dichiarata. Ora rivela il secondo dado.';render()}
+$('attack').addEventListener('click',()=>choose('attack'));$('defense').addEventListener('click',()=>choose('defense'));
+$('reveal2').addEventListener('click',()=>{const before=+($('ntb').value||0),o=resolve(s.choice,s.dice[0],s.dice[1],before);s.turns++;if(o.ex)s.extremes++;if(s.choice==='attack'){s.attacks++;if(o.kaputt)s.attackFails++}else s.defenses++;$('score').value=+(+$('score').value+o.points);if(o.kaputt)$('kaputts').value=+(+$('kaputts').value+1);$('ntb').value=o.next;s.history.push({turn:s.turns,ntbBefore:before,dice:[...s.dice],choice:s.choice,...o});$('status').textContent=(o.ex?'ESTREMO · ':'')+(s.choice==='attack'?(o.ok?'Attacco riuscito':'KAPUTT!'):'Difesa')+' · valore '+o.value+' · +'+o.points+' punti · NtB '+o.next;log('#'+s.turns+' '+JSON.stringify(s.history.at(-1)));s.phase='resolved';render()});
+$('reset').addEventListener('click',()=>{s={phase:'idle',dice:[],visible:null,choice:null,turns:0,extremes:0,attacks:0,defenses:0,attackFails:0,history:[]};$('ntb').value=1;$('score').value=0;$('kaputts').value=0;$('log').textContent='Sessione iniziata.';$('status').textContent='Pronto.';render()});
+$('export').addEventListener('click',()=>{const data=JSON.stringify({build:'K3-E1',exported:new Date().toISOString(),ntb:+$('ntb').value,score:+$('score').value,kaputts:+$('kaputts').value,...s},null,2),blob=new Blob([data],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kaputt-k3e1-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+render();
+})();
+</script>
+</body></html>
