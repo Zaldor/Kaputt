@@ -38,5 +38,42 @@ window.KaputtBots=(()=>{
     const ua=evalAction('attack'),ud=evalAction('defense'),choice=ua>ud?'attack':'defense',hold=choice==='attack'&&A.success===0;
     return{choice,why:'Strategist v2 · 2-ply: '+(hold?'intentional NtB hold':'opponent best-response priced')+' · A '+ua.toFixed(3)+' vs D '+ud.toFixed(3)+'.'};
   });
+  add('strategist3','Strategist v3 · Dynamic Pressure',ctx=>{const {a,n,A,p,opp,target,lim,resolve}=ctx;
+    // Recursive expectiminimax over complete future turns. The value of NtB is emergent:
+    // score proximity, remaining Kaputt runway and opponent best responses all alter the hold/reset threshold.
+    const clamp=x=>Math.max(0,Math.min(1,x)),memo=new Map(),MAX_DEPTH=4;
+    const leaf=(ms,mk,es,ek,ntb)=>{
+      if(ms>=target||ek>=lim)return 1;if(es>=target||mk>=lim)return 0;
+      const score=(ms-es)/(target*2.2),life=(ek-mk)/Math.max(1,lim)*.20;
+      // Pressure is deliberately weak at the leaf; search should discover its real value.
+      const pressure=Math.min(ntb,36)/36*.02;
+      return clamp(.5+score+life+pressure);
+    };
+    const stateValue=(ms,mk,es,ek,ntb,depth)=>{
+      if(ms>=target||ek>=lim)return 1;if(es>=target||mk>=lim)return 0;if(depth<=0)return leaf(ms,mk,es,ek,ntb);
+      const key=[ms,mk,es,ek,ntb,depth].join('|');if(memo.has(key))return memo.get(key);
+      // Opponent turn: for each revealed first die they choose the action minimizing our win value.
+      let total=0;
+      for(let v=1;v<=6;v++){
+        let bestForEnemy=1;
+        for(const action of ['attack','defense']){
+          let q=0;
+          for(let h=1;h<=6;h++){
+            const r=resolve(action,v,h,ntb),nes=es+r.points,nek=ek+(r.kaputt?1:0);
+            // Swap roles for the next full turn, then invert back to our perspective.
+            q+=1-stateValue(nes,nek,ms,mk,r.next,depth-1);
+          }
+          q/=6;if(q<bestForEnemy)bestForEnemy=q;
+        }
+        total+=bestForEnemy;
+      }
+      const out=total/6;memo.set(key,out);return out;
+    };
+    const evalAction=action=>{let total=0;for(let h=1;h<=6;h++){const r=resolve(action,a,h,n),ms=p.score+r.points,mk=p.k+(r.kaputt?1:0);total+=stateValue(ms,mk,opp.score,opp.k,r.next,MAX_DEPTH)}return total/6};
+    const ua=evalAction('attack'),ud=evalAction('defense'),choice=ua>ud?'attack':'defense';
+    const delta=ua-ud,hold=choice==='attack'&&A.success===0,lowChance=choice==='attack'&&A.success<=1/3;
+    const intent=hold?'HOLD: spends Kaputt runway to preserve pressure':lowChance?'PRESSURE ATTACK: accepts high risk':'ESCALATE/RESET chosen by dynamic match value';
+    return{choice,why:'Strategist v3 · '+intent+' · V(A) '+ua.toFixed(3)+' vs V(D) '+ud.toFixed(3)+' · Δ '+delta.toFixed(3)+'.'};
+  });
   return{get:id=>bots[id],list:()=>Object.values(bots)};
 })();
