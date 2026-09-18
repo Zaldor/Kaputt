@@ -1,0 +1,13 @@
+name = "kaputt-lab"
+main = "src/worker.js"
+compatibility_date = "2026-09-18"
+
+[assets]
+directory = "../lab"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kaputt-lab"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
