@@ -42,6 +42,18 @@ export default {
       ]);
       return json({matches:m,choices:t.results,byNtb:h.results});
     }
+    if(u.pathname==="/api/llm-proxy"&&request.method==="POST"){
+      try{
+        const b=await request.json();
+        if(!b.url||!b.body) return json({ok:false,error:"missing url or body"},400);
+        const allowed=["api.anthropic.com","generativelanguage.googleapis.com"];
+        const host=new URL(b.url).hostname;
+        if(!allowed.some(h=>host.endsWith(h))) return json({ok:false,error:"provider not allowed"},403);
+        const resp=await fetch(b.url,{method:"POST",headers:b.headers||{"Content-Type":"application/json"},body:JSON.stringify(b.body)});
+        const data=await resp.json();
+        return json(data,resp.status);
+      }catch(e){return json({ok:false,error:String(e)},500)}
+    }
     return env.ASSETS.fetch(request);
   }
 };
