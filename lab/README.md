@@ -27,5 +27,3 @@ The dice engine is unchanged: hidden 2d6, reveal one, irrevocably choose Attack 
 ## Experimental status
 
 The competitive victory conditions are a test baseline, not yet frozen 3.0 rules. Fortune Points and other game modes are intentionally excluded from this experiment.
-
-
