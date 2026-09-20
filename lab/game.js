@@ -178,6 +178,7 @@ function chooseAction(choice, bot = false) {
   if (busy || passing || match.isTerminal || match.phase !== E.Phase.FIRST || (!bot && isBotTurn())) return false;
   match.choose(choice); sfx('reveal'); render();
   announce(`${choice} committed. Reveal the other die.`);
+  resolveTurn(bot);
   return true;
 }
 async function resolveTurn(bot = false) {

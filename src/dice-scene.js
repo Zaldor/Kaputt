@@ -55,7 +55,7 @@ export class DiceScene {
     }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc6862f, 1.6));
     const light = new THREE.DirectionalLight(0xfff7e5, 4.2);
-    light.position.set(-3, 5, 8);
+    light.position.set(-2, 8, 6);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     Object.assign(light.shadow.camera, { left: -4, right: 4, top: 3, bottom: -3 });
@@ -66,8 +66,8 @@ export class DiceScene {
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: .26 }));
     floor.position.z = -1.03; floor.receiveShadow = true; this.scene.add(floor);
     this.bodyGeometry = new RoundedBoxGeometry(1.5, 1.5, 1.5, 5, .23);
-    this.ivory = new THREE.MeshPhysicalMaterial({ color: 0xfff4d5, roughness: .24, clearcoat: .85, clearcoatRoughness: .18 });
-    this.orange = new THREE.MeshPhysicalMaterial({ color: 0xff8008, roughness: .25, clearcoat: .9, clearcoatRoughness: .15 });
+    this.ivory = new THREE.MeshPhysicalMaterial({ color: 0xfff4d5, roughness: .55, clearcoat: .3, clearcoatRoughness: .5 });
+    this.orange = new THREE.MeshPhysicalMaterial({ color: 0xff8008, roughness: .55, clearcoat: .3, clearcoatRoughness: .5 });
     this.ink = new THREE.MeshPhysicalMaterial({ color: 0x10214c, roughness: .3, clearcoat: .5 });
     this.rim = new THREE.MeshStandardMaterial({ color: 0xe8dfc8, roughness: .35 });
     this.pipGeometry = new THREE.CircleGeometry(.112, 28);
