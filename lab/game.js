@@ -377,7 +377,7 @@ $('setup-form').addEventListener('submit', event => {
 $('llmprovider').addEventListener('change', refreshModels);
 $('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
 
-let remotePolling = null, remoteRoom = null, remotePlayerIndex = null;
+let remotePolling = null, remoteRoom = null, remotePlayerIndex = null, remoteLastTurn = -1;
 
 if ($('create-room')) {
   $('create-room').addEventListener('click', async () => {
@@ -388,6 +388,7 @@ if ($('create-room')) {
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = 0;
+        remoteLastTurn = -1;
         remoteRoom = { code: d.code, host_name: name, status: 'waiting', target: +$('target').value, kaputt_limit: +$('klimit').value, starting_ntb: +$('starting-ntb').value };
         $('room-status').textContent = `Room code: ${d.code} \u2014 share this with your opponent. Waiting for them to join...`;
         $('room-status').dataset.code = d.code;
@@ -413,6 +414,7 @@ if ($('join-code')) {
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = d.playerIndex ?? 1;
+        remoteLastTurn = -1;
         remoteRoom = { code, host_name: d.room?.host_name, guest_name: d.room?.guest_name, status: d.room?.status, current_state_json: d.room?.current_state_json, target: d.room?.target, kaputt_limit: d.room?.kaputt_limit, starting_ntb: d.room?.starting_ntb };
         $('room-status').textContent = `Joined room ${code}! Match starting...`;
         startRoomPolling(code);
@@ -439,7 +441,8 @@ async function pollRoomState(code) {
       return;
     }
     const state = JSON.parse(room.current_state_json || '{}');
-    if (room.status === 'playing' || room.status === 'finished') {
+    if ((room.status === 'playing' || room.status === 'finished') && (state.turn ?? 0) >= remoteLastTurn) {
+      remoteLastTurn = state.turn ?? 0;
       document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
       syncRemoteState(state, room);
     }
@@ -518,6 +521,7 @@ async function submitRemoteAction(action, visibleDie, hiddenDie) {
     const d = await r.json();
     if (d.ok && d.state) {
       remoteRoom.current_state_json = JSON.stringify(d.state);
+      remoteLastTurn = d.state.turn ?? remoteLastTurn;
       syncRemoteState(d.state, remoteRoom);
     } else {
       log('Action error: ' + (d.error || 'Unknown'));
