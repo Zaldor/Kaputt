@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const E = window.KaputtEngine;
 const LLM = window.KaputtLLM;
-let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1 };
+let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1, playerName: 'You' };
 let match = E.createMatch(setup);
 let version = 0, busy = false, passing = false, botThinking = false;
 let busyMessage = '', displayedValues = [null, null], lastResult = null;
@@ -16,9 +16,10 @@ const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matche
 const isBotTurn = () => setup.mode !== 'human' && match.currentPlayer === 1;
 const valid = token => token === version;
 const humanCanAct = () => !busy && !passing && !isBotTurn() && !match.isTerminal;
-const playerLabel = index => index === 1 && setup.mode !== 'human'
-  ? ($('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent || 'Bot')
-  : `Player ${index + 1}`;
+const playerLabel = index => {
+  if (index === 1 && setup.mode !== 'human') return ($('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent || 'Bot');
+  return index === 0 ? (setup.playerName || 'Player 1') : 'Player 2';
+};
 function announce(text) { $('game-announcement').textContent = text; }
 function log(text) { events.unshift(text); $('log').textContent = events.join('\n'); }
 function tone(freq, duration = .09, delay = 0, type = 'sine') {
@@ -92,7 +93,7 @@ function render() {
   document.querySelectorAll('.score-target').forEach(el => el.textContent = setup.target);
   $('opponent-name').textContent = playerLabel(opponent).toUpperCase();
   $('self-name').textContent = match.isTerminal ? (match.winner === me ? 'WINNER!' : 'GOOD GAME')
-    : isBotTurn() ? 'PLAYER 1' : setup.mode === 'human' && me === 1 ? 'PLAYER 2 · YOUR TURN' : 'YOUR TURN';
+    : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} · YOUR TURN` : `${setup.playerName || 'You'} · YOUR TURN`;
   $('opponent-score').textContent = players[opponent].score;
   $('self-score').textContent = players[me].score;
   $('opponent-kaputts').textContent = `${players[opponent].kaputt}/${setup.kaputtLimit}`;
@@ -352,7 +353,7 @@ $('mode').addEventListener('change', () => { const show = $('mode').value.starts
 $('setup-form').addEventListener('submit', event => {
   event.preventDefault();
   if (!$('setup-form').reportValidity()) return;
-  startMatch({ mode: $('mode').value, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value });
+  startMatch({ mode: $('mode').value, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value, playerName: ($('player-name')?.value || 'You').trim() || 'You' });
 });
 $('llmprovider').addEventListener('change', refreshModels);
 $('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
@@ -384,3 +385,4 @@ try {
   $('dice-stage').classList.add('has-webgl');
   displayedValues = publicValues(); scene.setValues(displayedValues); render();
 } catch (error) { console.warn('3D dice unavailable; accessible dice enabled.', error.message); }
+showDialog('setup-dialog');

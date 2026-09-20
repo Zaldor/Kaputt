@@ -51,6 +51,7 @@ export class DiceScene {
       const room = new RoomEnvironment();
       this.environment = pmrem.fromScene(room, .04);
       this.scene.environment = this.environment.texture;
+      this.scene.environmentIntensity = .35;
       room.dispose(); pmrem.dispose();
     }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6530, .8));
