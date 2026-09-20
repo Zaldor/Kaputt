@@ -3,6 +3,18 @@
 const $ = id => document.getElementById(id);
 const E = window.KaputtEngine;
 const LLM = window.KaputtLLM;
+
+// Player identity: UUID stored in localStorage, sent with all API requests
+function getPlayerUUID() {
+  let uuid = localStorage.getItem('kaputt-player-uuid');
+  if (!uuid) {
+    uuid = crypto.randomUUID();
+    localStorage.setItem('kaputt-player-uuid', uuid);
+  }
+  return uuid;
+}
+const PLAYER_UUID = getPlayerUUID();
+
 let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1, playerName: 'You', player2Name: 'Player 2' };
 let match = E.createMatch(setup);
 let version = 0, busy = false, passing = false, botThinking = false;
@@ -384,7 +396,7 @@ if ($('create-room')) {
     const name = ($('player-name')?.value || 'Host').trim();
     $('room-status').textContent = 'Creating room...';
     try {
-      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
+      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = 0;
@@ -410,7 +422,7 @@ if ($('join-code')) {
     const name = ($('player-name')?.value || 'Guest').trim();
     $('room-status').textContent = 'Joining...';
     try {
-      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guestName: name }) });
+      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID }, body: JSON.stringify({ guestName: name }) });
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = d.playerIndex ?? 1;
@@ -514,7 +526,7 @@ async function submitRemoteAction(action, visibleDie, hiddenDie) {
   const code = remoteRoom.code;
   try {
     const r = await fetch(`/api/rooms/${code}/action`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID },
       body: JSON.stringify({ playerIndex: remotePlayerIndex, action, visibleDie, hiddenDie })
     });
     const d = await r.json();

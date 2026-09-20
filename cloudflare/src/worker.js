@@ -28,21 +28,23 @@ async function updatePlayerStats(env, m){
   const scores=[m.scoreA??m.players?.[0]?.score??0,m.scoreB??m.players?.[1]?.score??0];
   const winIdx=m.winner==='P1'?0:m.winner==='P2'?1:m.winner===0?0:m.winner===1?1:-1;
   for(let i=0;i<2;i++){
+    const uuid=m.playerA===m.winner?m.playerA:m.playerB; // This needs to be fixed - we need UUIDs
+    // For now, we'll use the name as fallback but ideally we'd pass UUIDs
     const name=players[i],won=winIdx===i,lost=winIdx>=0&&winIdx!==i;
-    await env.DB.prepare(`INSERT INTO players(name,wins,losses,total_points,total_turns,best_score,matches_played,last_played)
-      VALUES(?,0,0,0,0,0,0,CURRENT_TIMESTAMP)
-      ON CONFLICT(name) DO UPDATE SET wins=wins+?,losses=losses+?,total_points=total_points+?,
+    await env.DB.prepare(`INSERT INTO players(uuid,name,wins,losses,total_points,total_turns,best_score,matches_played,last_played)
+      VALUES(?,?,0,0,0,0,0,CURRENT_TIMESTAMP)
+      ON CONFLICT(uuid) DO UPDATE SET wins=wins+?,losses=losses+?,total_points=total_points+?,
         total_turns=total_turns+?,best_score=MAX(best_score,?),matches_played=matches_played+1,
         last_played=CURRENT_TIMESTAMP`)
-      .bind(name,won?1:0,lost?1:0,scores[i],m.turns||0,scores[i]).run();
+      .bind(players[i]?.uuid||players[i]?.name,players[i]?.name||players[i],won?1:0,lost?1:0,scores[i],m.turns||0,scores[i]).run();
   }
 }
 
-async function createRoom(env, body){
+async function createRoom(env, body, playerUUID){
   const code=roomCode();
-  await env.DB.prepare(`INSERT INTO rooms(code,host_name,target,kaputt_limit,starting_ntb,status)
-    VALUES(?,?,?,?,?,?)`)
-    .bind(code,body.hostName||'Host',body.target||100,body.kaputtLimit||5,body.startingNtb??1,'waiting').run();
+  await env.DB.prepare(`INSERT INTO rooms(code,host_name,host_uuid,target,kaputt_limit,starting_ntb,status)
+    VALUES(?,?,?,?,?,?,?)`)
+    .bind(code,body.hostName||'Host',playerUUID,body.target||100,body.kaputtLimit||5,body.startingNtb??1,'waiting').run();
   return{code,status:'waiting'};
 }
 
@@ -50,7 +52,7 @@ async function getRoom(env,code){
   return await env.DB.prepare(`SELECT * FROM rooms WHERE code=?`).bind(code).first();
 }
 
-async function joinRoom(env,code,guestName){
+async function joinRoom(env,code,guestName,guestUUID){
   const room=await getRoom(env,code);
   if(!room)return{error:'Room not found'};
   
@@ -68,22 +70,31 @@ async function joinRoom(env,code,guestName){
     phase:'playing',currentPlayer:first,turn:0,
     ntb:room.starting_ntb,target:room.target,kaputtLimit:room.kaputt_limit,
     dice:[0,0],choice:null,visibleDie:null,
-    players:[{name:room.host_name,score:0,kaputt:0},{name:guestName,score:0,kaputt:0}],
+    players:[{name:room.host_name,uuid:room.host_uuid,score:0,kaputt:0},{name:guestName,uuid:guestUUID,score:0,kaputt:0}],
     lastResult:null,extremes:0,leadChanges:0,lastLeader:-1,
     history:[]
   };
-  await env.DB.prepare(`UPDATE rooms SET guest_name=?,status='playing',current_state_json=?,last_updated=CURRENT_TIMESTAMP WHERE code=?`)
-    .bind(guestName,JSON.stringify(state),code).run();
-  return{ok:true,room:{...room,guest_name:guestName,status:'playing',current_state_json:JSON.stringify(state)},playerIndex:1,firstPlayer:first};
+  await env.DB.prepare(`UPDATE rooms SET guest_name=?,guest_uuid=?,status='playing',current_state_json=?,last_updated=CURRENT_TIMESTAMP WHERE code=?`)
+    .bind(guestName,guestUUID,JSON.stringify(state),code).run();
+  return{ok:true,room:{...room,guest_name:guestName,guest_uuid:guestUUID,status:'playing',current_state_json:JSON.stringify(state)},playerIndex:1,firstPlayer:first};
 }
 
-async function submitAction(env,code,body){
+async function submitAction(env,code,body,requestHeaders){
   const room=await getRoom(env,code);
   if(!room)return{error:'Room not found'};
   if(room.status!=='playing')return{error:'Match not active'};
   const state=JSON.parse(room.current_state_json||'{}');
   if(state.phase==='finished')return{error:'Match finished'};
-  if(state.currentPlayer!==body.playerIndex)return{error:'Not your turn'};
+  
+  // Get player UUID from header
+  const playerUUID = requestHeaders.get('X-Player-UUID');
+  if(!playerUUID)return{error:'Missing X-Player-UUID header'};
+  
+  // Find player index by UUID
+  // Find player index by UUID (ignore body.playerIndex which may be stale)
+  const playerIndex = state.players.findIndex(p => p.uuid === playerUUID);
+  if(playerIndex === -1)return{error:'Player not found in this room'};
+  if(state.currentPlayer!==playerIndex)return{error:'Not your turn'};
   if(!['attack','defense'].includes(body.action))return{error:'Invalid action'};
   const {visibleDie,hiddenDie}=body;
   if(visibleDie<1||visibleDie>6||hiddenDie<1||hiddenDie>6)return{error:'Invalid dice'};
@@ -98,30 +109,30 @@ async function submitAction(env,code,body){
     points=extreme?1:Math.max(visibleDie,hiddenDie);
     nextNtb=value;
   }
-  const player=state.players[body.playerIndex];
-  const opponent=state.players[1-body.playerIndex];
+  const player=state.players[playerIndex];
+  const opponent=state.players[1-playerIndex];
   const pre={score:[player.score,opponent.score],kaputt:[player.kaputt,opponent.kaputt]};
   player.score+=points;
   if(kaputt){player.kaputt++}
   state.ntb=nextNtb; state.extremes=(state.extremes||0)+(extreme?1:0);
-  let leader=player.score===opponent.score?-1:(player.score>opponent.score?body.playerIndex:1-body.playerIndex);
+  let leader=player.score===opponent.score?-1:(player.score>opponent.score?playerIndex:1-playerIndex);
   if(state.lastLeader>=0&&leader>=0&&leader!==state.lastLeader)state.leadChanges=(state.leadChanges||0)+1;
   if(leader>=0)state.lastLeader=leader;
   let terminal=false,winner=null,winReason=null;
-  if(player.score>=state.target){terminal=true;winner=body.playerIndex;winReason='score target'}
-  else if(player.kaputt>=state.kaputtLimit){terminal=true;winner=1-body.playerIndex;winReason='opponent reached Kaputt limit'}
-  const turnEvent={turn:state.turn+1,player:body.playerIndex,visibleDie,hiddenDie,action:body.action,value,points,kaputt,extreme,nextNtb,ntbBefore:state.ntb,scoreBefore:pre.score,kaputtBefore:pre.kaputt};
+  if(player.score>=state.target){terminal=true;winner=playerIndex;winReason='score target'}
+  else if(player.kaputt>=state.kaputtLimit){terminal=true;winner=1-playerIndex;winReason='opponent reached Kaputt limit'}
+  const turnEvent={turn:state.turn+1,player:playerIndex,visibleDie,hiddenDie,action:body.action,value,points,kaputt,extreme,nextNtb,ntbBefore:state.ntb,scoreBefore:pre.score,kaputtBefore:pre.kaputt};
   state.history.push(turnEvent);
-  state.lastResult={...turnEvent,terminal,winner,winReason,players:state.players.map(p=>({name:p.name,score:p.score,kaputt:p.kaputt}))};
-  state.currentPlayer=1-body.playerIndex;
+  state.lastResult={...turnEvent,terminal,winner,winReason,players:state.players.map(p=>({name:p.name,uuid:p.uuid,score:p.score,kaputt:p.kaputt}))};
+  state.currentPlayer=1-playerIndex;
   state.turn++;
   state.phase=terminal?'finished':'playing';
-  if(terminal)state.winner=winner;
+  if(terminal)state.winner=playerIndex;
   const newStatus=terminal?'finished':'playing';
   await env.DB.prepare(`UPDATE rooms SET current_state_json=?,status=?,last_updated=CURRENT_TIMESTAMP WHERE code=?`)
     .bind(JSON.stringify(state),newStatus,code).run();
-  if(terminal)await updatePlayerStats(env,{playerA:state.players[0].name,playerB:state.players[1].name,
-    winner:winner===0?'P1':'P2',scoreA:state.players[0].score,scoreB:state.players[1].score,turns:state.turn}).catch(()=>{});
+  if(terminal)await updatePlayerStats(env,{playerA:state.players[0].uuid,playerB:state.players[1].uuid,
+    winner:winner===0?state.players[0].uuid:state.players[1].uuid,scoreA:state.players[0].score,scoreB:state.players[1].score,turns:state.turn}).catch(()=>{});
   return{ok:true,state};
 }
 
@@ -173,7 +184,7 @@ export default {
       }catch(e){return json({ok:false,error:String(e)},500)}
     }
     if(u.pathname==="/api/rooms"&&request.method==="POST"){
-      try{return json({ok:true,...await createRoom(env,await request.json())},201)}catch(e){return json({ok:false,error:String(e)},400)}
+      try{return json({ok:true,...await createRoom(env,await request.json(),request.headers.get('X-Player-UUID'))},201)}catch(e){return json({ok:false,error:String(e)},400)}
     }
     const roomMatch=u.pathname.match(/^\/api\/rooms\/([A-Z0-9]{4})$/);
     if(roomMatch){
@@ -184,11 +195,11 @@ export default {
     }
     const joinMatch=u.pathname.match(/^\/api\/rooms\/([A-Z0-9]{4})\/join$/);
     if(joinMatch&&request.method==="POST"){
-      try{const b=await request.json();const r=await joinRoom(env,joinMatch[1],b.guestName||'Guest');return r.error?json({ok:false,error:r.error},400):json(r)}catch(e){return json({ok:false,error:String(e)},400)}
+      try{const b=await request.json();const r=await joinRoom(env,joinMatch[1],b.guestName||'Guest',request.headers.get('X-Player-UUID'));return r.error?json({ok:false,error:r.error},400):json(r)}catch(e){return json({ok:false,error:String(e)},400)}
     }
     const actionMatch=u.pathname.match(/^\/api\/rooms\/([A-Z0-9]{4})\/action$/);
     if(actionMatch&&request.method==="POST"){
-      try{const r=await submitAction(env,actionMatch[1],await request.json());return r.error?json({ok:false,error:r.error},400):json({ok:true,...r})}catch(e){return json({ok:false,error:String(e)},400)}
+      try{const r=await submitAction(env,actionMatch[1],await request.json(),request.headers);return r.error?json({ok:false,error:r.error},400):json({ok:true,...r})}catch(e){return json({ok:false,error:String(e)},400)}
     }
     if(u.pathname==="/api/leaderboard"){
       try{const limit=+(u.searchParams.get('limit')||25);return json({ok:true,players:await getLeaderboard(env,Math.min(limit,100))})}catch(e){return json({ok:false,error:String(e)},500)}
