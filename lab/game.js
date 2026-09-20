@@ -402,6 +402,7 @@ if ($('create-room')) {
       if (d.ok) {
         remotePlayerIndex = 0;
         remoteLastTurn = -1;
+        setup.mode = 'remote';
         remoteRoom = { code: d.code, host_name: name, status: 'waiting', target: +$('target').value, kaputt_limit: +$('klimit').value, starting_ntb: +$('starting-ntb').value };
         $('room-status').textContent = `Room code: ${d.code} \u2014 share this with your opponent. Waiting for them to join...`;
         $('room-status').dataset.code = d.code;
@@ -428,6 +429,7 @@ if ($('join-code')) {
       if (d.ok) {
         remotePlayerIndex = d.playerIndex ?? 1;
         remoteLastTurn = -1;
+        setup.mode = 'remote';
         remoteRoom = { code, host_name: d.room?.host_name, guest_name: d.room?.guest_name, status: d.room?.status, current_state_json: d.room?.current_state_json, target: d.room?.target, kaputt_limit: d.room?.kaputt_limit, starting_ntb: d.room?.starting_ntb };
         if (d.room?.current_state_json) {
           const state = JSON.parse(d.room.current_state_json);
