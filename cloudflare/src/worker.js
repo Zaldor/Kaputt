@@ -55,10 +55,18 @@ async function joinRoom(env,code,guestName){
   if(!room)return{error:'Room not found'};
   if(room.status!=='waiting')return{error:'Room not accepting players'};
   if(room.guest_name)return{error:'Room full'};
-  const state=JSON.stringify({phase:'waiting',players:[{name:room.host_name,score:0,kaputt:0},{name:guestName,score:0,kaputt:0}],ntb:room.starting_ntb,turn:0});
+  const first=Math.random()<0.5?0:1;
+  const state={
+    phase:'playing',currentPlayer:first,turn:0,
+    ntb:room.starting_ntb,target:room.target,kaputtLimit:room.kaputt_limit,
+    dice:[0,0],choice:null,visibleDie:null,
+    players:[{name:room.host_name,score:0,kaputt:0},{name:guestName,score:0,kaputt:0}],
+    lastResult:null,extremes:0,leadChanges:0,lastLeader:-1,
+    history:[]
+  };
   await env.DB.prepare(`UPDATE rooms SET guest_name=?,status='playing',current_state_json=?,last_updated=CURRENT_TIMESTAMP WHERE code=?`)
-    .bind(guestName,state,code).run();
-  return await getRoom(env,code);
+    .bind(guestName,JSON.stringify(state),code).run();
+  return{ok:true,room:{...room,guest_name:guestName,status:'playing',current_state_json:JSON.stringify(state)},playerIndex:1,firstPlayer:first};
 }
 
 async function submitAction(env,code,body){
@@ -66,15 +74,46 @@ async function submitAction(env,code,body){
   if(!room)return{error:'Room not found'};
   if(room.status!=='playing')return{error:'Match not active'};
   const state=JSON.parse(room.current_state_json||'{}');
-  if(state.currentPlayer!==undefined&&state.currentPlayer!==body.playerIndex)
-    return{error:'Not your turn'};
-  state.lastAction={player:body.playerIndex,action:body.action,dice:body.dice,visibleDie:body.visibleDie,hiddenDie:body.hiddenDie,result:body.result};
+  if(state.phase==='finished')return{error:'Match finished'};
+  if(state.currentPlayer!==body.playerIndex)return{error:'Not your turn'};
+  if(!['attack','defense'].includes(body.action))return{error:'Invalid action'};
+  const {visibleDie,hiddenDie}=body;
+  if(visibleDie<1||visibleDie>6||hiddenDie<1||hiddenDie>6)return{error:'Invalid dice'};
+  const extreme=(visibleDie===1&&hiddenDie===6)||(visibleDie===6&&hiddenDie===1);
+  let value,points,kaputt=false,nextNtb;
+  if(body.action==='attack'){
+    value=extreme?36:visibleDie*hiddenDie;
+    const success=value>state.ntb;
+    points=success?value:0; kaputt=!success; nextNtb=success?value:state.ntb;
+  }else{
+    value=extreme?2:visibleDie+hiddenDie;
+    points=extreme?1:Math.max(visibleDie,hiddenDie);
+    nextNtb=value;
+  }
+  const player=state.players[body.playerIndex];
+  const opponent=state.players[1-body.playerIndex];
+  const pre={score:[player.score,opponent.score],kaputt:[player.kaputt,opponent.kaputt]};
+  player.score+=points;
+  if(kaputt){player.kaputt++}
+  state.ntb=nextNtb; state.extremes=(state.extremes||0)+(extreme?1:0);
+  let leader=player.score===opponent.score?-1:(player.score>opponent.score?body.playerIndex:1-body.playerIndex);
+  if(state.lastLeader>=0&&leader>=0&&leader!==state.lastLeader)state.leadChanges=(state.leadChanges||0)+1;
+  if(leader>=0)state.lastLeader=leader;
+  let terminal=false,winner=null,winReason=null;
+  if(player.score>=state.target){terminal=true;winner=body.playerIndex;winReason='score target'}
+  else if(player.kaputt>=state.kaputtLimit){terminal=true;winner=1-body.playerIndex;winReason='opponent reached Kaputt limit'}
+  const turnEvent={turn:state.turn+1,player:body.playerIndex,visibleDie,hiddenDie,action:body.action,value,points,kaputt,extreme,nextNtb,ntbBefore:state.ntb,scoreBefore:pre.score,kaputtBefore:pre.kaputt};
+  state.history.push(turnEvent);
+  state.lastResult={...turnEvent,terminal,winner,winReason,players:state.players.map(p=>({name:p.name,score:p.score,kaputt:p.kaputt}))};
   state.currentPlayer=1-body.playerIndex;
-  state.turn=(state.turn||0)+1;
-  state.phase=body.result?.terminal?'finished':'playing';
-  if(body.result?.terminal) state.winner=body.result.winner;
+  state.turn++;
+  state.phase=terminal?'finished':'playing';
+  if(terminal)state.winner=winner;
+  const newStatus=terminal?'finished':'playing';
   await env.DB.prepare(`UPDATE rooms SET current_state_json=?,status=?,last_updated=CURRENT_TIMESTAMP WHERE code=?`)
-    .bind(JSON.stringify(state),state.phase==='finished'?'finished':'playing',code).run();
+    .bind(JSON.stringify(state),newStatus,code).run();
+  if(terminal)await updatePlayerStats(env,{playerA:state.players[0].name,playerB:state.players[1].name,
+    winner:winner===0?'P1':'P2',scoreA:state.players[0].score,scoreB:state.players[1].score,turns:state.turn}).catch(()=>{});
   return{ok:true,state};
 }
 

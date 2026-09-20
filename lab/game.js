@@ -15,7 +15,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isBotTurn = () => setup.mode !== 'human' && match.currentPlayer === 1;
 const valid = token => token === version;
-const humanCanAct = () => !busy && !passing && !isBotTurn() && !match.isTerminal;
+const humanCanAct = () => {
+  if (busy || passing || match.isTerminal) return false;
+  if (setup.mode === 'remote') return remoteRoom && remotePlayerIndex !== null && remotePlayerIndex === (JSON.parse(remoteRoom.current_state_json || '{}').currentPlayer ?? -1);
+  return !isBotTurn();
+};
 const playerLabel = index => {
   if (index === 1 && setup.mode !== 'human') return ($('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent || 'Bot');
   return index === 0 ? (setup.playerName || 'Player 1') : (setup.player2Name || 'Player 2');
@@ -201,6 +205,9 @@ async function resolveTurn(bot = false) {
   else if (event.points >= 20) showPopup(`+${event.points}`, 'success');
   announce(`${event.kaputt ? 'Kaputt. No points.' : `${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal ? ` ${playerLabel(match.winner)} wins.` : ''}`);
   if (match.isTerminal) uploadMatch();
+  if (setup.mode === 'remote' && remoteRoom) {
+    submitRemoteAction(event.choice, event.visibleDie, event.hiddenDie);
+  }
   return true;
 }
 async function tapDie(index) {
@@ -374,7 +381,7 @@ if ($('create-room')) {
     try {
       const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
       const d = await r.json();
-      if (d.ok) { $('room-status').textContent = `Room code: ${d.code} — share this with your opponent. Waiting...`; $('room-status').dataset.code = d.code; pollRoom(d.code, name); }
+      if (d.ok) { $('room-status').textContent = `Room code: ${d.code} — share this with your opponent. Waiting...`; $('room-status').dataset.code = d.code;         startRoomPolling(d.code); }
       else $('room-status').textContent = 'Error: ' + (d.error || 'Failed');
     } catch (e) { $('room-status').textContent = 'Network error.'; }
   });
@@ -394,35 +401,151 @@ if ($('join-code')) {
     try {
       const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guestName: name }) });
       const d = await r.json();
-      if (d.ok) { $('room-status').textContent = `Joined room ${code}! Starting match...`; pollRoom(code, name); }
+      if (d.ok) { $('room-status').textContent = `Joined room ${code}! Starting match...`;         startRoomPolling(code); }
       else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
     } catch (e) { $('room-status').textContent = 'Network error.'; }
   });
 }
 
-let remotePolling = null;
-async function pollRoom(code, myName) {
-  if (remotePolling) clearInterval(remotePolling);
-  remotePolling = setInterval(async () => {
+let remotePolling = null, remoteRoom = null, remotePlayerIndex = null;
+
+if ($('create-room')) {
+  $('create-room').addEventListener('click', async () => {
+    const name = ($('player-name')?.value || 'Host').trim();
+    $('room-status').textContent = 'Creating room...';
     try {
-      const r = await fetch(`/api/rooms/${code}`);
+      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
       const d = await r.json();
-      if (!d.ok) return;
-      const room = d.room;
-      if (room.status === 'waiting') {
-        $('room-status').textContent = `Room ${code} — waiting for opponent...`;
-      } else if (room.status === 'playing') {
-        clearInterval(remotePolling); remotePolling = null;
-        document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
-        const state = JSON.parse(room.current_state_json || '{}');
-        const hostName = room.host_name, guestName = room.guest_name;
-        startMatch({ mode: 'human', target: room.target, kaputtLimit: room.kaputt_limit, startingNtb: room.starting_ntb, playerName: myName === guestName ? guestName : hostName, player2Name: myName === guestName ? hostName : guestName });
-      } else if (room.status === 'finished') {
-        clearInterval(remotePolling); remotePolling = null;
-        $('room-status').textContent = 'Match finished.';
-      }
-    } catch {}
-  }, 1500);
+      if (d.ok) {
+        remotePlayerIndex = 0;
+        $('room-status').textContent = `Room code: ${d.code} \u2014 share this with your opponent. Waiting for them to join...`;
+        $('room-status').dataset.code = d.code;
+        startRoomPolling(d.code);
+      } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed');
+    } catch (e) { $('room-status').textContent = 'Network error.'; }
+  });
+}
+if ($('join-room-btn')) {
+  $('join-room-btn').addEventListener('click', () => {
+    const jl = $('join-code-label'); if (jl) jl.hidden = !jl.hidden;
+    $('room-status').textContent = 'Enter the 4-character room code.';
+  });
+}
+if ($('join-code')) {
+  $('join-code').addEventListener('input', async () => {
+    const code = $('join-code').value.toUpperCase().trim();
+    if (code.length !== 4) return;
+    const name = ($('player-name')?.value || 'Guest').trim();
+    $('room-status').textContent = 'Joining...';
+    try {
+      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guestName: name }) });
+      const d = await r.json();
+      if (d.ok) {
+        remotePlayerIndex = d.playerIndex ?? 1;
+        $('room-status').textContent = `Joined room ${code}! Match starting...`;
+        startRoomPolling(code);
+      } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
+    } catch (e) { $('room-status').textContent = 'Network error.'; }
+  });
+}
+
+function startRoomPolling(code) {
+  if (remotePolling) clearInterval(remotePolling);
+  remotePolling = setInterval(() => pollRoomState(code), 1500);
+  pollRoomState(code);
+}
+
+async function pollRoomState(code) {
+  try {
+    const r = await fetch(`/api/rooms/${code}`);
+    const d = await r.json();
+    if (!d.ok) return;
+    const room = d.room;
+    remoteRoom = room;
+    if (room.status === 'waiting') {
+      $('room-status').textContent = `Room ${code} \u2014 waiting for opponent to join...`;
+      return;
+    }
+    const state = JSON.parse(room.current_state_json || '{}');
+    if (room.status === 'playing' || room.status === 'finished') {
+      document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+      syncRemoteState(state, room);
+    }
+    if (room.status === 'finished') {
+      clearInterval(remotePolling); remotePolling = null;
+    }
+  } catch {}
+}
+
+function syncRemoteState(state, room) {
+  const myIdx = remotePlayerIndex;
+  const isMyTurn = state.currentPlayer === myIdx && state.phase === 'playing';
+  const oppIdx = 1 - myIdx;
+  const myName = state.players[myIdx]?.name || 'You';
+  const oppName = state.players[oppIdx]?.name || 'Opponent';
+
+  $('opponent-name').textContent = oppName.toUpperCase();
+  $('self-name').textContent = state.phase === 'finished'
+    ? (state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER')
+    : isMyTurn ? `${myName} \u00B7 YOUR TURN` : `${myName} \u2014 waiting`;
+  $('opponent-score').textContent = state.players[oppIdx]?.score || 0;
+  $('self-score').textContent = state.players[myIdx]?.score || 0;
+  $('opponent-kaputts').textContent = `${state.players[oppIdx]?.kaputt || 0}/${state.kaputtLimit}`;
+  $('self-kaputts').textContent = `${state.players[myIdx]?.kaputt || 0}/${state.kaputtLimit}`;
+  $('ntb').textContent = state.ntb;
+  $('target-label').textContent = state.target;
+
+  if (state.lastResult) {
+    const lr = state.lastResult;
+    displayedValues = [lr.visibleDie, lr.hiddenDie];
+    scene?.setValues(displayedValues);
+    $('turn-title').textContent = lr.kaputt ? 'KAPUTT!' : lr.extreme ? `EXTREME! +${lr.points}` : `+${lr.points} POINTS`;
+    $('turn-detail').textContent = lr.kaputt ? 'No points. The target holds.' : `${lr.action === 'attack' ? 'Attack' : 'Defense'} pays off.`;
+    if (lr.kaputt) showPopup('KAPUTT!', 'kaputt');
+    else if (lr.extreme) showPopup(`EXTREME \u00B7 ${lr.value}`, 'extreme');
+    else if (lr.points >= 20) showPopup(`+${lr.points}`, 'success');
+  }
+
+  if (state.phase === 'finished') {
+    $('turn-title').textContent = state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER';
+    $('turn-detail').textContent = state.lastResult?.winReason || '';
+    showPopup(state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER', state.winner === myIdx ? 'win' : 'lose');
+    $('primary-action').hidden = false;
+    $('primary-label').textContent = 'PLAY AGAIN';
+    $('primary-action').disabled = false;
+    $('decision-actions').hidden = true;
+    return;
+  }
+
+  if (isMyTurn) {
+    $('turn-title').textContent = 'YOUR TURN';
+    $('turn-detail').textContent = 'Roll, reveal a die, choose Attack or Defense.';
+    $('primary-action').hidden = false;
+    $('primary-label').textContent = 'ROLL THE DICE';
+    $('primary-action').disabled = false;
+  } else {
+    $('turn-title').textContent = 'OPPONENT\u2019S TURN';
+    $('turn-detail').textContent = `${oppName} is playing...`;
+    $('primary-action').hidden = true;
+    $('decision-actions').hidden = true;
+  }
+}
+
+async function submitRemoteAction(action, visibleDie, hiddenDie) {
+  if (!remoteRoom || remotePlayerIndex === null) return;
+  const code = remoteRoom.code;
+  try {
+    const r = await fetch(`/api/rooms/${code}/action`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerIndex: remotePlayerIndex, action, visibleDie, hiddenDie })
+    });
+    const d = await r.json();
+    if (d.ok && d.state) {
+      syncRemoteState(d.state, remoteRoom);
+    } else {
+      log('Action error: ' + (d.error || 'Unknown'));
+    }
+  } catch (e) { log('Network error submitting action.'); }
 }
 $('llmtemp').addEventListener('change', () => { if ($('llmtemp').checkValidity()) LLM.setTemperature(+$('llmtemp').value); });
 $('llmsave').addEventListener('click', async () => {
