@@ -55,7 +55,7 @@ export class DiceScene {
     }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc6862f, 1.6));
     const light = new THREE.DirectionalLight(0xfff7e5, 4.2);
-    light.position.set(-3, 5, 8);
+    light.position.set(0, 6, 10);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     Object.assign(light.shadow.camera, { left: -4, right: 4, top: 3, bottom: -3 });
