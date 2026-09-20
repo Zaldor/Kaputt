@@ -378,6 +378,12 @@ displayedValues = publicValues(); render();
 try {
   const { DiceScene } = await import('./dice-scene.js');
   scene = new DiceScene($('dice-renderer'));
+  const canvas = scene.renderer.domElement;
+  const shell = $('game');
+  shell.prepend(canvas);
+  scene.container = shell;
+  scene.resize();
+  new ResizeObserver(() => scene.resize()).observe(shell);
   $('dice-stage').classList.add('has-webgl');
   displayedValues = publicValues(); scene.setValues(displayedValues); render();
 } catch (error) { console.warn('3D dice unavailable; accessible dice enabled.', error.message); }
