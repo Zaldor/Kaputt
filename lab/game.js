@@ -386,27 +386,6 @@ if ($('create-room')) {
     } catch (e) { $('room-status').textContent = 'Network error.'; }
   });
 }
-if ($('join-room-btn')) {
-  $('join-room-btn').addEventListener('click', () => {
-    const jl = $('join-code-label'); if (jl) jl.hidden = !jl.hidden;
-    $('room-status').textContent = 'Enter the 4-character room code.';
-  });
-}
-if ($('join-code')) {
-  $('join-code').addEventListener('input', async () => {
-    const code = $('join-code').value.toUpperCase().trim();
-    if (code.length !== 4) return;
-    const name = ($('player-name')?.value || 'Guest').trim();
-    $('room-status').textContent = 'Joining...';
-    try {
-      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guestName: name }) });
-      const d = await r.json();
-      if (d.ok) { $('room-status').textContent = `Joined room ${code}! Starting match...`;         startRoomPolling(code); }
-      else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
-    } catch (e) { $('room-status').textContent = 'Network error.'; }
-  });
-}
-
 let remotePolling = null, remoteRoom = null, remotePlayerIndex = null;
 
 if ($('create-room')) {
