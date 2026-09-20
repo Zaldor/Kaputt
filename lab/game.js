@@ -6,10 +6,10 @@ const LLM = window.KaputtLLM;
 
 // Player identity: UUID stored in localStorage, sent with all API requests
 function getPlayerUUID() {
-  let uuid = localStorage.getItem('kaputt-player-uuid');
+  let uuid = sessionStorage.getItem('kaputt-player-uuid');
   if (!uuid) {
     uuid = crypto.randomUUID();
-    localStorage.setItem('kaputt-player-uuid', uuid);
+    sessionStorage.setItem('kaputt-player-uuid', uuid);
   }
   return uuid;
 }
