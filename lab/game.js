@@ -487,13 +487,15 @@ function syncRemoteState(state, room) {
   }
 
   if (isMyTurn) {
-    match = E.createMatch({ target: state.target, kaputtLimit: state.kaputtLimit, startingNtb: state.ntb });
-    displayedValues = [null, null]; lastResult = null; scene?.setValues(displayedValues);
-    $('turn-title').textContent = 'YOUR TURN';
-    $('turn-detail').textContent = 'Roll, reveal a die, choose Attack or Defense.';
-    $('primary-action').hidden = false;
+    if ([E.Phase.IDLE, E.Phase.RESOLVED].includes(match.phase)) {
+      match = E.createMatch({ target: state.target, kaputtLimit: state.kaputtLimit, startingNtb: state.ntb });
+      displayedValues = [null, null]; lastResult = null; scene?.setValues(displayedValues);
+    }
+    $('turn-title').textContent = match.phase === E.Phase.IDLE ? 'YOUR TURN' : $('turn-title').textContent;
+    $('turn-detail').textContent = match.phase === E.Phase.IDLE ? 'Roll, reveal a die, choose Attack or Defense.' : $('turn-detail').textContent;
+    $('primary-action').hidden = match.phase !== E.Phase.IDLE;
     $('primary-label').textContent = 'ROLL THE DICE';
-    $('primary-action').disabled = false;
+    $('primary-action').disabled = match.phase !== E.Phase.IDLE;
   } else {
     $('turn-title').textContent = 'OPPONENT\u2019S TURN';
     $('turn-detail').textContent = `${oppName} is playing...`;
