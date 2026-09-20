@@ -176,7 +176,7 @@ export default {
     }
     const joinMatch=u.pathname.match(/^\/api\/rooms\/([A-Z0-9]{4})\/join$/);
     if(joinMatch&&request.method==="POST"){
-      try{const b=await request.json();const r=await joinRoom(env,joinMatch[1],b.guestName||'Guest');return r.error?json({ok:false,error:r.error},400):json({ok:true,room:r})}catch(e){return json({ok:false,error:String(e)},400)}
+      try{const b=await request.json();const r=await joinRoom(env,joinMatch[1],b.guestName||'Guest');return r.error?json({ok:false,error:r.error},400):json(r)}catch(e){return json({ok:false,error:String(e)},400)}
     }
     const actionMatch=u.pathname.match(/^\/api\/rooms\/([A-Z0-9]{4})\/action$/);
     if(actionMatch&&request.method==="POST"){
