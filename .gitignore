@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.DS_Store
+qa-artifacts/
+# Full-resolution generation intermediates; optimized assets are tracked.
+lab/assets/kaputt-logo.png
+lab/assets/target-ring.png

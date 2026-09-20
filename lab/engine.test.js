@@ -6,6 +6,69 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createRng, isExtreme, resolve, conditionalStats, createMatch, Phase } = require('./engine.js');
 
+describe('Choosing which physical die to reveal', () => {
+  for (const index of [0, 1]) {
+    it(`reveals physical die ${index} without rerolling, and logs the correct order`, () => {
+      const game = createMatch({ seed: 42, startingNtb: 12 });
+      game.roll(); const rolled = game.dice;
+      const first = game.revealFirst(index);
+      assert.equal(first.visibleDie, rolled[index]);
+      assert.equal(first.firstDieIndex, index);
+      assert.deepEqual(game.dice, rolled);
+      const publicState = game.getPublicState();
+      assert.equal(publicState.visibleDie, rolled[index]);
+      assert.equal(publicState.firstDieIndex, index);
+      assert.equal('hiddenDie' in publicState, false);
+      assert.equal('dice' in publicState, false);
+      assert.throws(() => game.revealFirst(1 - index), /Cannot reveal first/);
+      assert.throws(() => game.revealSecond(), /Cannot reveal second/);
+      game.choose('defense');
+      assert.throws(() => game.choose('attack'), /Cannot choose/);
+      const event = game.revealSecond();
+      assert.equal(event.visibleDie, rolled[index]);
+      assert.equal(event.hiddenDie, rolled[1 - index]);
+      assert.equal(event.firstDieIndex, index);
+      assert.equal(event.points, resolve('defense', ...rolled, 12).points);
+      game.nextTurn();
+      assert.equal(game.firstDieIndex, null);
+      assert.equal(game.getPublicState().visibleDie, null);
+    });
+  }
+  it('rejects invalid selection without exposing either value or changing phase', () => {
+    const game = createMatch({ seed: 3 }); game.roll();
+    for (const index of [-1, 2, 0.5, null, '1', NaN]) assert.throws(() => game.revealFirst(index), /die index/);
+    assert.equal(game.phase, Phase.ROLLED);
+    assert.equal(game.getPublicState().visibleDie, null);
+    assert.equal(game.firstDieIndex, null);
+  });
+  it('keeps a Player 1 score win terminal after selecting the right die', () => {
+    const game = createMatch({ seed: 1, target: 1, startingNtb: 0 });
+    game.roll(); game.revealFirst(1); game.choose('attack'); game.revealSecond();
+    assert.equal(game.winner, 0); assert.equal(game.isTerminal, true);
+    assert.throws(() => game.nextTurn(), /Match is over/);
+    assert.throws(() => game.roll(), /Match is over/);
+  });
+  it('keeps a Kaputt-limit loss terminal after selecting the right die', () => {
+    const game = createMatch({ seed: 1, kaputtLimit: 1, startingNtb: 36 });
+    game.roll(); game.revealFirst(1); game.choose('attack'); game.revealSecond();
+    assert.equal(game.winner, 1); assert.equal(game.players[0].kaputt, 1);
+    assert.throws(() => game.nextTurn(), /Match is over/);
+  });
+  it('preserves Extreme resolution with either die revealed first', () => {
+    for (const action of ['attack', 'defense']) {
+      for (let seed = 0; seed < 100; seed++) {
+        const left = createMatch({ seed, startingNtb: 12 });
+        const right = createMatch({ seed, startingNtb: 12 });
+        left.roll(); right.roll();
+        left.revealFirst(0); right.revealFirst(1);
+        left.choose(action); right.choose(action);
+        const a = left.revealSecond(), b = right.revealSecond();
+        for (const field of ['points', 'value', 'nextNtb', 'extreme', 'kaputt']) assert.equal(a[field], b[field]);
+      }
+    }
+  });
+});
+
 // ===== K3-E1 Resolution — Pure Functions =====
 
 describe('isExtreme()', () => {

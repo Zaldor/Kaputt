@@ -145,12 +145,14 @@ function createMatch(config = {}) {
   let phase = Phase.IDLE;
   let currentPlayer = 0;
   let dice = [0, 0];
+  let firstDieIndex = null;
   let choice = null;
   let turnNumber = 0;
   let ntb = startingNtb;
   let winner = null;
   let winReason = null;
   let decisionStartTime = 0;
+  let decisionMs = 0;
 
   const players = [];
   for (let i = 0; i < playerCount; i++) {
@@ -219,8 +221,11 @@ function createMatch(config = {}) {
     /** Current NtB value. */
     get ntb() { return ntb; },
 
-    /** Dice from the current turn [visible?, hidden?]. */
+    /** Physical dice from the current turn [left, right]; never pass to bots. */
     get dice() { return [...dice]; },
+
+    /** Physical die selected first: 0 (left), 1 (right), or null. */
+    get firstDieIndex() { return firstDieIndex; },
 
     /** The chosen action for the current turn, or null. */
     get choice() { return choice; },
@@ -274,7 +279,8 @@ function createMatch(config = {}) {
         target,
         kaputtLimit,
         visibleDie: phase === Phase.FIRST || phase === Phase.CHOSEN || phase === Phase.RESOLVED
-          ? dice[0] : null,
+          ? dice[firstDieIndex] : null,
+        firstDieIndex,
         choice,
         turnNumber,
         winner,
@@ -296,6 +302,8 @@ function createMatch(config = {}) {
         throw new Error('Match is over');
       }
       dice = [roll(), roll()];
+      firstDieIndex = null;
+      decisionMs = 0;
       choice = null;
       phase = Phase.ROLLING;
       // Immediately transition to ROLLED (animation is a UI concern)
@@ -303,14 +311,18 @@ function createMatch(config = {}) {
       return { dice: [0, 0] }; // Hidden — callers must not see dice yet
     },
 
-    /** Reveal the first die. Records decision timer start. */
-    revealFirst() {
+    /** Reveal either physical die without rerolling or reordering the pair. */
+    revealFirst(index = 0) {
       if (phase !== Phase.ROLLED) {
         throw new Error(`Cannot reveal first in phase "${phase}"`);
       }
+      if (index !== 0 && index !== 1) {
+        throw new Error('die index must be 0 or 1');
+      }
+      firstDieIndex = index;
       phase = Phase.FIRST;
       decisionStartTime = Date.now();
-      return { visibleDie: dice[0] };
+      return { visibleDie: dice[firstDieIndex], firstDieIndex };
     },
 
     /**
@@ -325,6 +337,7 @@ function createMatch(config = {}) {
         throw new Error('action must be "attack" or "defense"');
       }
       choice = action;
+      decisionMs = Date.now() - decisionStartTime;
       phase = Phase.CHOSEN;
       return { choice };
     },
@@ -336,8 +349,9 @@ function createMatch(config = {}) {
       }
 
       const ntbBefore = ntb;
-      const decisionMs = Date.now() - decisionStartTime;
-      const result = resolve(choice, dice[0], dice[1], ntbBefore);
+      const visibleDie = dice[firstDieIndex];
+      const hiddenDie = dice[1 - firstDieIndex];
+      const result = resolve(choice, visibleDie, hiddenDie, ntbBefore);
       const player = players[currentPlayer];
       const opponent = players[1 - currentPlayer];
 
@@ -374,8 +388,9 @@ function createMatch(config = {}) {
         turn: turnNumber,
         player: currentPlayer,
         ntbBefore,
-        visibleDie: dice[0],
-        hiddenDie: dice[1],
+        visibleDie,
+        hiddenDie,
+        firstDieIndex,
         choice,
         decisionMs,
         ...result,
@@ -407,6 +422,7 @@ function createMatch(config = {}) {
       currentPlayer = 1 - currentPlayer;
       phase = Phase.IDLE;
       dice = [0, 0];
+      firstDieIndex = null;
       choice = null;
     },
 
