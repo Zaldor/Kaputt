@@ -350,10 +350,13 @@ $('open-lab').addEventListener('click', () => showDialog('lab-dialog'));
 for (const button of document.querySelectorAll('[data-close]')) button.addEventListener('click', () => $(button.dataset.close).close());
 $('toggle-sound').addEventListener('click', () => { sound = !sound; try { localStorage.setItem('kaputt-sound', sound ? 'on' : 'off'); } catch {} render(); });
 $('mode').addEventListener('change', () => {
-  const isHuman = $('mode').value === 'human';
-  const isLLM = $('mode').value.startsWith('llm_');
+  const mode = $('mode').value;
+  const isHuman = mode === 'human';
+  const isLLM = mode.startsWith('llm_');
+  const isRemote = mode === 'remote';
   $('llmsettings').hidden = !isLLM; if (isLLM) populateLLM();
   const p2 = $('p2-name-label'); if (p2) p2.hidden = !isHuman;
+  const rs = $('remote-settings'); if (rs) rs.hidden = !isRemote;
 });
 $('setup-form').addEventListener('submit', event => {
   event.preventDefault();
@@ -362,6 +365,65 @@ $('setup-form').addEventListener('submit', event => {
 });
 $('llmprovider').addEventListener('change', refreshModels);
 $('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
+
+// Remote VS room handlers
+if ($('create-room')) {
+  $('create-room').addEventListener('click', async () => {
+    const name = ($('player-name')?.value || 'Host').trim();
+    $('room-status').textContent = 'Creating room...';
+    try {
+      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
+      const d = await r.json();
+      if (d.ok) { $('room-status').textContent = `Room code: ${d.code} — share this with your opponent. Waiting...`; $('room-status').dataset.code = d.code; pollRoom(d.code, name); }
+      else $('room-status').textContent = 'Error: ' + (d.error || 'Failed');
+    } catch (e) { $('room-status').textContent = 'Network error.'; }
+  });
+}
+if ($('join-room-btn')) {
+  $('join-room-btn').addEventListener('click', () => {
+    const jl = $('join-code-label'); if (jl) jl.hidden = !jl.hidden;
+    $('room-status').textContent = 'Enter the 4-character room code.';
+  });
+}
+if ($('join-code')) {
+  $('join-code').addEventListener('input', async () => {
+    const code = $('join-code').value.toUpperCase().trim();
+    if (code.length !== 4) return;
+    const name = ($('player-name')?.value || 'Guest').trim();
+    $('room-status').textContent = 'Joining...';
+    try {
+      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guestName: name }) });
+      const d = await r.json();
+      if (d.ok) { $('room-status').textContent = `Joined room ${code}! Starting match...`; pollRoom(code, name); }
+      else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
+    } catch (e) { $('room-status').textContent = 'Network error.'; }
+  });
+}
+
+let remotePolling = null;
+async function pollRoom(code, myName) {
+  if (remotePolling) clearInterval(remotePolling);
+  remotePolling = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/rooms/${code}`);
+      const d = await r.json();
+      if (!d.ok) return;
+      const room = d.room;
+      if (room.status === 'waiting') {
+        $('room-status').textContent = `Room ${code} — waiting for opponent...`;
+      } else if (room.status === 'playing') {
+        clearInterval(remotePolling); remotePolling = null;
+        document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+        const state = JSON.parse(room.current_state_json || '{}');
+        const hostName = room.host_name, guestName = room.guest_name;
+        startMatch({ mode: 'human', target: room.target, kaputtLimit: room.kaputt_limit, startingNtb: room.starting_ntb, playerName: myName === guestName ? guestName : hostName, player2Name: myName === guestName ? hostName : guestName });
+      } else if (room.status === 'finished') {
+        clearInterval(remotePolling); remotePolling = null;
+        $('room-status').textContent = 'Match finished.';
+      }
+    } catch {}
+  }, 1500);
+}
 $('llmtemp').addEventListener('change', () => { if ($('llmtemp').checkValidity()) LLM.setTemperature(+$('llmtemp').value); });
 $('llmsave').addEventListener('click', async () => {
   const key = $('llmkey').value.trim(); if (!key) return;

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaputt! — Leaderboard</title>
+<style>
+:root{font-family:system-ui,sans-serif;color-scheme:dark;background:#101114;color:#f4f4f5;--o:#ff7a1a}*{box-sizing:border-box}body{margin:0;padding:16px;max-width:700px;margin:auto}
+.card{background:#191b20;border:1px solid #30333b;border-radius:14px;padding:15px;margin-top:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:.2em 0}.accent{color:var(--o)}.muted{color:#a6abb5;font-size:13px}
+.nav{display:flex;gap:8px}.nav a{color:var(--o);text-decoration:none;padding:6px 12px;border:1px solid #444955;border-radius:8px;font-size:13px}.nav a:hover{background:#23262d}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}th,td{padding:8px 10px;border-bottom:1px solid #30333b;text-align:right}th{text-align:left;color:#a6abb5;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}td:first-child,th:first-child{text-align:left}
+.rank{color:#a6abb5;font-weight:600;min-width:28px}.name{font-weight:700;color:#fff}.win-rate{color:var(--o);font-weight:700}
+.empty{text-align:center;padding:40px;color:#a6abb5}
+</style></head><body>
+<header><div><div class="muted">K3-E1 · competitive</div><h1>KAPUTT! <span class="accent">Leaderboard</span></h1></div>
+<nav class="nav"><a href="index.html">PLAY</a><a href="sim.html">SIMULATE</a></nav></header>
+<div class="card">
+<table><thead><tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Matches</th><th>Best</th></tr></thead><tbody id="lb-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody></table>
+</div>
+<script>
+(async()=>{
+  const tb=document.getElementById('lb-body');
+  try{
+    const r=await fetch('/api/leaderboard?limit=50');
+    const d=await r.json();
+    if(!d.ok||!d.players.length){tb.innerHTML='<tr><td colspan="7" class="empty">No matches recorded yet. Play some games!</td></tr>';return}
+    tb.innerHTML=d.players.map((p,i)=>`<tr><td class="rank">${i+1}</td><td class="name">${esc(p.name)}</td><td>${p.wins}</td><td>${p.losses}</td><td class="win-rate">${p.win_rate}%</td><td>${p.matches_played}</td><td>${p.best_score}</td></tr>`).join('');
+  }catch(e){tb.innerHTML='<tr><td colspan="7" class="empty">Could not load leaderboard.</td></tr>'}
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+})();
+</script></body></html>
