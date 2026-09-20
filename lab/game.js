@@ -101,7 +101,6 @@ function renderLab() {
   } else $('prob').textContent = 'Reveal one die to see conditional outcomes.';
 }
 function render() {
-  if (setup.mode === 'remote') return;
   const state = match.getPublicState();
   const phase = match.phase;
   const me = setup.mode === 'human' ? match.currentPlayer : 0, opponent = 1 - me;
@@ -109,18 +108,20 @@ function render() {
   $('game').dataset.phase = busy ? 'animating' : phase;
   $('game').dataset.terminal = String(match.isTerminal);
   $('game').dataset.passing = String(passing);
-  $('target-label').textContent = setup.target;
-  document.querySelectorAll('.score-target').forEach(el => el.textContent = setup.target);
-  $('opponent-name').textContent = playerLabel(opponent).toUpperCase();
-  $('self-name').textContent = match.isTerminal ? (match.winner === me ? 'WINNER!' : 'GOOD GAME')
-    : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} Â· YOUR TURN` : `${setup.playerName || 'You'} Â· YOUR TURN`;
-  $('opponent-score').textContent = players[opponent].score;
-  $('self-score').textContent = players[me].score;
-  $('opponent-kaputts').textContent = `${players[opponent].kaputt}/${setup.kaputtLimit}`;
-  $('self-kaputts').textContent = `${players[me].kaputt}/${setup.kaputtLimit}`;
-  drawPenalties('opponent-dots', players[opponent].kaputt);
-  drawPenalties('self-dots', players[me].kaputt);
-  $('ntb').textContent = match.ntb;
+  if (setup.mode !== 'remote') {
+    $('target-label').textContent = setup.target;
+    document.querySelectorAll('.score-target').forEach(el => el.textContent = setup.target);
+    $('opponent-name').textContent = playerLabel(opponent).toUpperCase();
+    $('self-name').textContent = match.isTerminal ? (match.winner === me ? 'WINNER!' : 'GOOD GAME')
+      : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} · YOUR TURN` : `${setup.playerName || 'You'} · YOUR TURN`;
+    $('opponent-score').textContent = players[opponent].score;
+    $('self-score').textContent = players[me].score;
+    $('opponent-kaputts').textContent = `${players[opponent].kaputt}/${setup.kaputtLimit}`;
+    $('self-kaputts').textContent = `${players[me].kaputt}/${setup.kaputtLimit}`;
+    drawPenalties('opponent-dots', players[opponent].kaputt);
+    drawPenalties('self-dots', players[me].kaputt);
+    $('ntb').textContent = match.ntb;
+  }
   $('attack-short').textContent = `Multiply Â· beat ${match.ntb}`;
   const canAct = humanCanAct();
   for (let i = 0; i < 2; i++) {
