@@ -17,7 +17,10 @@ const isBotTurn = () => setup.mode !== 'human' && match.currentPlayer === 1;
 const valid = token => token === version;
 const humanCanAct = () => {
   if (busy || passing || match.isTerminal) return false;
-  if (setup.mode === 'remote') return remoteRoom && remotePlayerIndex !== null && remotePlayerIndex === (JSON.parse(remoteRoom.current_state_json || '{}').currentPlayer ?? -1);
+  if (setup.mode === 'remote') {
+    if (!remoteRoom || remotePlayerIndex === null) return false;
+    try { const s = JSON.parse(remoteRoom.current_state_json || '{}'); return s.currentPlayer === remotePlayerIndex && s.phase === 'playing'; } catch { return false; }
+  }
   return !isBotTurn();
 };
 const playerLabel = index => {
@@ -373,19 +376,6 @@ $('setup-form').addEventListener('submit', event => {
 $('llmprovider').addEventListener('change', refreshModels);
 $('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
 
-// Remote VS room handlers
-if ($('create-room')) {
-  $('create-room').addEventListener('click', async () => {
-    const name = ($('player-name')?.value || 'Host').trim();
-    $('room-status').textContent = 'Creating room...';
-    try {
-      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
-      const d = await r.json();
-      if (d.ok) { $('room-status').textContent = `Room code: ${d.code} — share this with your opponent. Waiting...`; $('room-status').dataset.code = d.code;         startRoomPolling(d.code); }
-      else $('room-status').textContent = 'Error: ' + (d.error || 'Failed');
-    } catch (e) { $('room-status').textContent = 'Network error.'; }
-  });
-}
 let remotePolling = null, remoteRoom = null, remotePlayerIndex = null;
 
 if ($('create-room')) {
@@ -497,6 +487,8 @@ function syncRemoteState(state, room) {
   }
 
   if (isMyTurn) {
+    match = E.createMatch({ target: state.target, kaputtLimit: state.kaputtLimit, startingNtb: state.ntb });
+    displayedValues = [null, null]; lastResult = null; scene?.setValues(displayedValues);
     $('turn-title').textContent = 'YOUR TURN';
     $('turn-detail').textContent = 'Roll, reveal a die, choose Attack or Defense.';
     $('primary-action').hidden = false;
@@ -520,6 +512,7 @@ async function submitRemoteAction(action, visibleDie, hiddenDie) {
     });
     const d = await r.json();
     if (d.ok && d.state) {
+      remoteRoom.current_state_json = JSON.stringify(d.state);
       syncRemoteState(d.state, remoteRoom);
     } else {
       log('Action error: ' + (d.error || 'Unknown'));
