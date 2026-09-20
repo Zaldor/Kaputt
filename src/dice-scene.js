@@ -54,15 +54,15 @@ export class DiceScene {
       room.dispose(); pmrem.dispose();
     }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc6862f, 1.6));
-    const light = new THREE.DirectionalLight(0xfff7e5, 3.8);
-    light.position.set(0, 12, 4);
+    const light = new THREE.DirectionalLight(0xfff7e5, 3.2);
+    light.position.set(0, -10, 5);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     Object.assign(light.shadow.camera, { left: -4, right: 4, top: 3, bottom: -3 });
     light.shadow.normalBias = .025; light.shadow.radius = 5;
     this.scene.add(light);
-    const fill = new THREE.DirectionalLight(0xffffff, 1.1);
-    fill.position.set(4, 2, 5); this.scene.add(fill);
+    const fill = new THREE.DirectionalLight(0xffffff, 2.0);
+    fill.position.set(0, 6, 8); this.scene.add(fill);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: .26 }));
     floor.position.z = -1.03; floor.receiveShadow = true; this.scene.add(floor);
     this.bodyGeometry = new RoundedBoxGeometry(1.5, 1.5, 1.5, 5, .23);
