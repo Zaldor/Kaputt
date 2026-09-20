@@ -89,6 +89,7 @@ function renderLab() {
   } else $('prob').textContent = 'Reveal one die to see conditional outcomes.';
 }
 function render() {
+  if (setup.mode === 'remote') return;
   const state = match.getPublicState();
   const phase = match.phase;
   const me = setup.mode === 'human' ? match.currentPlayer : 0, opponent = 1 - me;
@@ -387,6 +388,7 @@ if ($('create-room')) {
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = 0;
+        remoteRoom = { code: d.code, host_name: name, status: 'waiting', target: +$('target').value, kaputt_limit: +$('klimit').value, starting_ntb: +$('starting-ntb').value };
         $('room-status').textContent = `Room code: ${d.code} \u2014 share this with your opponent. Waiting for them to join...`;
         $('room-status').dataset.code = d.code;
         startRoomPolling(d.code);
@@ -411,6 +413,7 @@ if ($('join-code')) {
       const d = await r.json();
       if (d.ok) {
         remotePlayerIndex = d.playerIndex ?? 1;
+        remoteRoom = { code, host_name: d.room?.host_name, guest_name: d.room?.guest_name, status: d.room?.status, current_state_json: d.room?.current_state_json, target: d.room?.target, kaputt_limit: d.room?.kaputt_limit, starting_ntb: d.room?.starting_ntb };
         $('room-status').textContent = `Joined room ${code}! Match starting...`;
         startRoomPolling(code);
       } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
