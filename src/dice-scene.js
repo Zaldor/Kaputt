@@ -54,8 +54,8 @@ export class DiceScene {
       room.dispose(); pmrem.dispose();
     }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc6862f, 1.6));
-    const light = new THREE.DirectionalLight(0xfff7e5, 4.2);
-    light.position.set(-2, 8, 6);
+    const light = new THREE.DirectionalLight(0xfff7e5, 3.8);
+    light.position.set(0, 12, 4);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
     Object.assign(light.shadow.camera, { left: -4, right: 4, top: 3, bottom: -3 });
@@ -127,7 +127,7 @@ export class DiceScene {
     if (!width || !height) return;
     this.renderer.setSize(width, height, false);
     // Keep the complete dice visible when compact phones shorten the canvas.
-    const halfWidth = Math.max(2.15, .97 * width / height);
+    const halfWidth = Math.max(2.3, 1.04 * width / height);
     this.camera.left = -halfWidth; this.camera.right = halfWidth;
     this.camera.top = halfWidth * height / width; this.camera.bottom = -this.camera.top;
     this.camera.updateProjectionMatrix(); this.draw();
@@ -159,12 +159,12 @@ export class DiceScene {
   }
   reveal(index, value) {
     const values = [...this.values]; values[index] = value;
-    const die = this.dice[index]; let shown = false;
-    return this.animate(430, t => {
-      if (t >= .5 && !shown) { this.setValues(values); shown = true; }
-      const spin = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI * 2 * (1 - t), 0));
-      die.group.quaternion.copy(this.pose(index, t < .5 ? null : value)).multiply(spin);
-      die.group.position.y = Math.sin(t * Math.PI) * .14; die.group.scale.setScalar(1 + Math.sin(t * Math.PI) * .06);
+    const die = this.dice[index]; let switched = false;
+    return this.animate(400, t => {
+      if (t >= .45 && !switched) { this.setValues(values); switched = true; }
+      const lift = Math.sin(t * Math.PI);
+      die.group.position.y = lift * .45;
+      die.group.scale.setScalar(1 + lift * .12);
     }, () => this.setValues(values));
   }
   finish() {
