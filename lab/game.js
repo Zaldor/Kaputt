@@ -432,6 +432,7 @@ if ($('join-code')) {
         if (d.room?.current_state_json) {
           const state = JSON.parse(d.room.current_state_json);
           remoteLastTurn = state.turn ?? 0;
+          document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
           syncRemoteState(state, remoteRoom);
         }
         $('room-status').textContent = `Joined room ${code}! Match starting...`;
