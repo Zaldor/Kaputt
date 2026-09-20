@@ -138,7 +138,7 @@ function render() {
   $('attack').disabled = !decisionVisible || !canAct;
   $('defense').disabled = !decisionVisible || !canAct;
   const primary = $('primary-action');
-  primary.hidden = decisionVisible || (!busy && !isBotTurn() && phase === E.Phase.ROLLED);
+  primary.hidden = decisionVisible || (!busy && !isBotTurn() && phase === E.Phase.ROLLED) || (setup.mode === 'remote' && phase === E.Phase.RESOLVED);
   primary.disabled = busy || passing || (isBotTurn() && phase !== E.Phase.RESOLVED);
   let title = 'READY TO ROLL?', detail = 'Two dice. One decision.', action = 'ROLL THE DICE';
   if (phase === E.Phase.ROLLED) { title = 'PICK A DIE TO REVEAL'; detail = 'Left or right. The choice is yours.'; }
@@ -147,7 +147,7 @@ function render() {
   if (phase === E.Phase.RESOLVED && lastResult) {
     title = lastResult.kaputt ? 'KAPUTT!' : lastResult.extreme ? `EXTREME! +${lastResult.points}` : `+${lastResult.points} POINTS`;
     detail = lastResult.kaputt ? 'No points. The target holds.' : `${match.choice === 'attack' ? 'Attack' : 'Defense'} pays off.`;
-    action = setup.mode === 'human' ? 'PASS THE TURN' : isBotTurn() ? 'YOUR TURN' : 'NEXT TURN';
+    action = setup.mode === 'remote' ? 'WAITING FOR OPPONENT' : setup.mode === 'human' ? 'PASS THE TURN' : isBotTurn() ? 'YOUR TURN' : 'NEXT TURN';
   }
   if (botThinking) { title = 'OPPONENT IS THINKING'; detail = 'Only the revealed die is visible to your opponent.'; action = 'THINKINGâ€¦'; }
   if (busy) { title = busyMessage; detail = ''; action = busyMessage; }
@@ -233,6 +233,7 @@ async function tapDie(index) {
 }
 function nextTurn() {
   if (busy || match.phase !== E.Phase.RESOLVED || match.isTerminal) return;
+  if (setup.mode === 'remote') return;
   match.nextTurn(); displayedValues = [null, null]; lastResult = null; botReason = '';
   scene?.setValues(displayedValues);
   if (setup.mode === 'human') {
@@ -428,6 +429,11 @@ if ($('join-code')) {
         remotePlayerIndex = d.playerIndex ?? 1;
         remoteLastTurn = -1;
         remoteRoom = { code, host_name: d.room?.host_name, guest_name: d.room?.guest_name, status: d.room?.status, current_state_json: d.room?.current_state_json, target: d.room?.target, kaputt_limit: d.room?.kaputt_limit, starting_ntb: d.room?.starting_ntb };
+        if (d.room?.current_state_json) {
+          const state = JSON.parse(d.room.current_state_json);
+          remoteLastTurn = state.turn ?? 0;
+          syncRemoteState(state, remoteRoom);
+        }
         $('room-status').textContent = `Joined room ${code}! Match starting...`;
         startRoomPolling(code);
       } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
