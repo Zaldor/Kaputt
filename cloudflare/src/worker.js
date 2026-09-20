@@ -136,11 +136,68 @@ async function submitAction(env,code,body,requestHeaders){
   return{ok:true,state};
 }
 
-async function getLeaderboard(env,limit=25){
-  const rows=await env.DB.prepare(`SELECT name,wins,losses,matches_played,total_points,best_score,
-    CASE WHEN matches_played>0 THEN ROUND(100.0*wins/matches_played,1) ELSE 0 END as win_rate
-    FROM players WHERE matches_played>0 ORDER BY wins DESC LIMIT ?`).bind(limit).all();
-  return rows.results||[];
+async function getLeaderboard(env,limit=25,period='all'){
+  let where='';
+  if(period==='today')where=`WHERE created_at >= date('now','start of day')`;
+  else if(period==='week')where=`WHERE created_at >= date('now','weekday 0','-7 days')`;
+  else if(period==='month')where=`WHERE created_at >= date('now','start of month')`;
+  const rows=await env.DB.prepare(`SELECT player_a as name,
+    SUM(CASE WHEN winner='P1' THEN 1 ELSE 0 END) as wins,
+    SUM(CASE WHEN winner='P2' THEN 1 ELSE 0 END) as losses,
+    COUNT(*) as matches_played,
+    SUM(score_a) as total_points,
+    MAX(score_a) as best_score,
+    ROUND(AVG(turns),1) as avg_turns,
+    ROUND(AVG(score_a),1) as avg_score
+    FROM matches ${where} GROUP BY player_a HAVING COUNT(*)>0
+    UNION ALL
+    SELECT player_b as name,
+    SUM(CASE WHEN winner='P2' THEN 1 ELSE 0 END) as wins,
+    SUM(CASE WHEN winner='P1' THEN 1 ELSE 0 END) as losses,
+    COUNT(*) as matches_played,
+    SUM(score_b) as total_points,
+    MAX(score_b) as best_score,
+    ROUND(AVG(turns),1) as avg_turns,
+    ROUND(AVG(score_b),1) as avg_score
+    FROM matches ${where} GROUP BY player_b HAVING COUNT(*)>0`).all();
+  const map=new Map();
+  for(const r of rows.results||[]){
+    const k=r.name;if(!k)continue;
+    const e=map.get(k)||{name:k,wins:0,losses:0,matches_played:0,total_points:0,best_score:0,avg_turns:0,avg_score:0,count:0};
+    e.wins+=r.wins;e.losses+=r.losses;e.matches_played+=r.matches_played;
+    e.total_points+=r.total_points;e.best_score=Math.max(e.best_score,r.best_score);
+    e.avg_turns=(e.avg_turns*e.count+r.avg_turns*r.matches_played)/(e.count+r.matches_played);
+    e.avg_score=(e.avg_score*e.count+r.avg_score*r.matches_played)/(e.count+r.matches_played);
+    e.count+=r.matches_played;map.set(k,e);
+  }
+  const merged=[...map.values()].map(e=>({...e,win_rate:e.matches_played>0?Math.round(1000*e.wins/e.matches_played)/10:0,avg_turns:Math.round(e.avg_turns*10)/10,avg_score:Math.round(e.avg_score*10)/10}));
+  merged.sort((a,b)=>b.wins-a.wins||b.win_rate-a.win_rate);
+  return merged.slice(0,limit);
+}
+
+async function getBadges(env){
+  const badges=[];
+  const fastest=await env.DB.prepare(`SELECT player_a as name, MIN(turns) as val FROM matches WHERE winner='P1' GROUP BY player_a UNION ALL SELECT player_b as name, MIN(turns) as val FROM matches WHERE winner='P2' GROUP BY player_b ORDER BY val ASC LIMIT 1`).first();
+  if(fastest)badges.push({id:'speed_demon',label:'Speed Demon',desc:'Won in fewest turns',player:fastest.name,value:fastest.val+' turns'});
+  const most_attacks=await env.DB.prepare(`SELECT actor as name, COUNT(*) as val FROM turns WHERE choice='attack' GROUP BY actor ORDER BY val DESC LIMIT 1`).first();
+  if(most_attacks)badges.push({id:'berserker',label:'Berserker',desc:'Most total attacks',player:most_attacks.name,value:most_attacks.val+' attacks'});
+  const most_defense=await env.DB.prepare(`SELECT actor as name, COUNT(*) as val FROM turns WHERE choice='defense' GROUP BY actor ORDER BY val DESC LIMIT 1`).first();
+  if(most_defense)badges.push({id:'iron_wall',label:'Iron Wall',desc:'Most total defenses',player:most_defense.name,value:most_defense.val+' defenses'});
+  const most_extreme=await env.DB.prepare(`SELECT actor as name, COUNT(*) as val FROM turns WHERE extreme=1 GROUP BY actor ORDER BY val DESC LIMIT 1`).first();
+  if(most_extreme)badges.push({id:'extreme_master',label:'Extreme Master',desc:'Most Extreme events',player:most_extreme.name,value:most_extreme.val+' extremes'});
+  const most_kaputt=await env.DB.prepare(`SELECT actor as name, COUNT(*) as val FROM turns WHERE kaputt=1 GROUP BY actor ORDER BY val DESC LIMIT 1`).first();
+  if(most_kaputt)badges.push({id:'kaputt_magnet',label:'Kaputt Magnet',desc:'Most Kaputt events suffered',player:most_kaputt.name,value:most_kaputt.val+' kaputts'});
+  const marathon=await env.DB.prepare(`SELECT player_a as name, MAX(turns) as val FROM matches GROUP BY player_a UNION ALL SELECT player_b as name, MAX(turns) as val FROM matches GROUP BY player_b ORDER BY val DESC LIMIT 1`).first();
+  if(marathon)badges.push({id:'marathon_runner',label:'Marathon Runner',desc:'Longest match played',player:marathon.name,value:marathon.val+' turns'});
+  const best_score=await env.DB.prepare(`SELECT player_a as name, MAX(score_a) as val FROM matches GROUP BY player_a UNION ALL SELECT player_b as name, MAX(score_b) as val FROM matches GROUP BY player_b ORDER BY val DESC LIMIT 1`).first();
+  if(best_score)badges.push({id:'high_scorer',label:'High Scorer',desc:'Highest single-match score',player:best_score.name,value:best_score.val+' pts'});
+  const most_matches=await env.DB.prepare(`SELECT name, SUM(cnt) as val FROM (SELECT player_a as name, COUNT(*) as cnt FROM matches GROUP BY player_a UNION ALL SELECT player_b, COUNT(*) FROM matches GROUP BY player_b) GROUP BY name ORDER BY val DESC LIMIT 1`).first();
+  if(most_matches)badges.push({id:'veteran',label:'Veteran',desc:'Most matches played',player:most_matches.name,value:most_matches.val+' matches'});
+  const most_holds=await env.DB.prepare(`SELECT actor as name, COUNT(*) as val FROM turns WHERE strategic_hold=1 GROUP BY actor ORDER BY val DESC LIMIT 1`).first();
+  if(most_holds)badges.push({id:'hold_champion',label:'Hold Champion',desc:'Most strategic holds',player:most_holds.name,value:most_holds.val+' holds'});
+  const best_wr=await env.DB.prepare(`SELECT name, win_rate, wins FROM (SELECT player_a as name, CASE WHEN SUM(1)>0 THEN ROUND(100.0*SUM(CASE WHEN winner='P1' THEN 1 ELSE 0 END)/SUM(1),1) ELSE 0 END as win_rate, SUM(CASE WHEN winner='P1' THEN 1 ELSE 0 END) as wins FROM matches GROUP BY player_a HAVING SUM(1)>=5 UNION ALL SELECT player_b, CASE WHEN SUM(1)>0 THEN ROUND(100.0*SUM(CASE WHEN winner='P2' THEN 1 ELSE 0 END)/SUM(1),1) ELSE 0 END, SUM(CASE WHEN winner='P2' THEN 1 ELSE 0 END) FROM matches GROUP BY player_b HAVING SUM(1)>=5) ORDER BY win_rate DESC LIMIT 1`).first();
+  if(best_wr)badges.push({id:'undefeated',label:'Undefeated',desc:'Highest win rate (5+ matches)',player:best_wr.name,value:best_wr.win_rate+'%'});
+  return badges;
 }
 
 async function finishRoom(env,code,matchId){
@@ -202,7 +259,10 @@ export default {
       try{const r=await submitAction(env,actionMatch[1],await request.json(),request.headers);return r.error?json({ok:false,error:r.error},400):json({ok:true,...r})}catch(e){return json({ok:false,error:String(e)},400)}
     }
     if(u.pathname==="/api/leaderboard"){
-      try{const limit=+(u.searchParams.get('limit')||25);return json({ok:true,players:await getLeaderboard(env,Math.min(limit,100))})}catch(e){return json({ok:false,error:String(e)},500)}
+      try{const limit=+(u.searchParams.get('limit')||25);const period=u.searchParams.get('period')||'all';return json({ok:true,players:await getLeaderboard(env,Math.min(limit,100),period)})}catch(e){return json({ok:false,error:String(e)},500)}
+    }
+    if(u.pathname==="/api/badges"){
+      try{return json({ok:true,badges:await getBadges(env)})}catch(e){return json({ok:false,error:String(e)},500)}
     }
     return env.ASSETS.fetch(request);
   }
