@@ -15,13 +15,13 @@
 @keyframes fallback-roll{0%{transform:rotate(0) scale(.85)}30%{transform:rotate(145deg) scale(1)}75%{transform:rotate(315deg) scale(.92)}100%{transform:rotate(360deg)}}
 .event-popup{position:absolute;top:30%;left:50%;transform:translate(-50%,-50%) scale(0);z-index:10;pointer-events:none;opacity:0;transition:none;white-space:nowrap}
 .event-popup.show{animation:event-pop .9s cubic-bezier(.2,.8,.2,1) forwards}
-.event-popup span{font-weight:900;font-size:14cqw;letter-spacing:-.03em;text-shadow:0 4px 20px rgba(0,0,0,.4),0 0 60px rgba(255,255,255,.15)}
-.event-popup.pop-kaputt span{color:#ff4444}
-.event-popup.pop-extreme span{color:#ff9511}
-.event-popup.pop-success span{color:#4ade80}
-.event-popup.pop-win span{color:#ffe15d;font-size:16cqw}
-.event-popup.pop-lose span{color:#beb5fa;font-size:12cqw}
-@keyframes event-pop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}15%{transform:translate(-50%,-50%) scale(1.3);opacity:1}30%{transform:translate(-50%,-50%) scale(1);opacity:1}75%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(.8);opacity:0}}
+.event-popup span{font-weight:900;font-size:12cqw;letter-spacing:.04em;text-shadow:0 3px 12px rgba(0,0,0,.5);padding:1.5cqw 4cqw;border-radius:3cqw;display:inline-block;background:rgba(16,32,89,.85);border:2px solid rgba(255,255,255,.15);backdrop-filter:blur(4px)}
+.event-popup.pop-kaputt span{color:#ff4444;border-color:#ff444488;background:rgba(80,10,10,.9)}
+.event-popup.pop-extreme span{color:#ff9511;border-color:#ff951188;background:rgba(80,40,0,.9)}
+.event-popup.pop-success span{color:#4ade80;border-color:#4ade8088;background:rgba(10,60,20,.9)}
+.event-popup.pop-win span{color:#ffe15d;font-size:14cqw;border-color:#ffe15d88;background:rgba(60,50,0,.9);padding:2cqw 5cqw}
+.event-popup.pop-lose span{color:#beb5fa;font-size:10cqw;border-color:#beb5fa88;background:rgba(30,20,60,.9)}
+@keyframes event-pop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}15%{transform:translate(-50%,-50%) scale(1.2);opacity:1}30%{transform:translate(-50%,-50%) scale(1);opacity:1}75%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(.85);opacity:0}}
 @media(min-width:600px){.game-shell{box-shadow:0 0 70px #050e2966}.sheet{border-radius:28px}}
 @media(max-width:360px){.game-header{min-height:62px}.penalty-label{gap:1cqw}.game-button strong{font-size:6.5cqw}.choice-explanations{font-size:4.1cqw}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

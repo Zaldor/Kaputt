@@ -119,7 +119,6 @@ function render() {
   const primary = $('primary-action');
   primary.hidden = decisionVisible || (!busy && !isBotTurn() && phase === E.Phase.ROLLED);
   primary.disabled = busy || passing || (isBotTurn() && phase !== E.Phase.RESOLVED);
-  $('outcome-detail').hidden = phase !== E.Phase.RESOLVED;
   let title = 'READY TO ROLL?', detail = 'Two dice. One decision.', action = 'ROLL THE DICE';
   if (phase === E.Phase.ROLLED) { title = 'PICK A DIE TO REVEAL'; detail = 'Left or right. The choice is yours.'; }
   if (phase === E.Phase.FIRST) { title = 'CHOOSE YOUR MOVE'; detail = ''; }
@@ -128,8 +127,6 @@ function render() {
     title = lastResult.kaputt ? 'KAPUTT!' : lastResult.extreme ? `EXTREME! +${lastResult.points}` : `+${lastResult.points} POINTS`;
     detail = lastResult.kaputt ? 'No points. The target holds.' : `${match.choice === 'attack' ? 'Attack' : 'Defense'} pays off.`;
     action = setup.mode === 'human' ? 'PASS THE TURN' : isBotTurn() ? 'YOUR TURN' : 'NEXT TURN';
-    const op = lastResult.choice === 'attack' ? '×' : '+';
-    $('outcome-detail').textContent = `${lastResult.visibleDie} ${op} ${lastResult.hiddenDie}${lastResult.extreme ? ' · EXTREME' : ''} → ${lastResult.value}. ${lastResult.kaputt ? '+1 Kaputt.' : `+${lastResult.points} points.`} Number to beat: ${lastResult.ntbAfter}.`;
   }
   if (botThinking) { title = 'OPPONENT IS THINKING'; detail = 'Only the revealed die is visible to your opponent.'; action = 'THINKING…'; }
   if (busy) { title = busyMessage; detail = ''; action = busyMessage; }
