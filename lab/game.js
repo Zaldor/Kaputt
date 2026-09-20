@@ -41,6 +41,12 @@ function sfx(kind) {
   else if (kind === 'success') { tone(440, .1); tone(660, .14, .08); }
   else tone(520, .07, 0, 'triangle');
 }
+function showPopup(text, kind) {
+  const el = $('event-popup'), span = $('event-popup-text');
+  span.textContent = text;
+  el.className = `event-popup pop-${kind} show`;
+  el.onanimationend = () => { el.className = 'event-popup'; };
+}
 function drawPenalties(id, count) {
   const root = $(id); root.replaceChildren();
   root.classList.toggle('many', setup.kaputtLimit > 5);
@@ -192,6 +198,11 @@ async function resolveTurn(bot = false) {
   lastResult = event; displayedValues = publicValues(); scene?.setValues(displayedValues); busy = false;
   log(`#${event.turn} P${event.player + 1} ${event.choice} · ${event.visibleDie}/${event.hiddenDie} → ${event.value} · +${event.points}${event.kaputt ? ' KAPUTT' : ''}`);
   render(); sfx(match.isTerminal ? 'win' : event.kaputt ? 'kaputt' : 'success');
+  if (match.isTerminal) { showPopup(match.winner === (setup.mode === 'human' ? event.player : 0) ? 'YOU WIN!' : 'GAME OVER', 'win'); }
+  else if (event.extreme && event.choice === 'attack') showPopup('EXTREME · 36', 'extreme');
+  else if (event.extreme && event.choice === 'defense') showPopup('EXTREME · 2', 'extreme');
+  else if (event.kaputt) showPopup('KAPUTT!', 'kaputt');
+  else if (event.points >= 20) showPopup(`+${event.points}`, 'success');
   announce(`${event.kaputt ? 'Kaputt. No points.' : `${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal ? ` ${playerLabel(match.winner)} wins.` : ''}`);
   if (match.isTerminal) uploadMatch();
   return true;
