@@ -101,7 +101,6 @@ function render() {
   drawPenalties('self-dots', players[me].kaputt);
   $('ntb').textContent = match.ntb;
   $('attack-short').textContent = `Multiply · beat ${match.ntb}`;
-  $('attack-explanation').innerHTML = `Multiply the dice.<br>Result must be greater<br>than ${match.ntb} or it’s a Kaputt!`;
   const canAct = humanCanAct();
   for (let i = 0; i < 2; i++) {
     const button = $(i === 0 ? 'die-left' : 'die-right');
@@ -120,7 +119,6 @@ function render() {
   const primary = $('primary-action');
   primary.hidden = decisionVisible || (!busy && !isBotTurn() && phase === E.Phase.ROLLED);
   primary.disabled = busy || passing || (isBotTurn() && phase !== E.Phase.RESOLVED);
-  $('choice-explanations').hidden = phase === E.Phase.RESOLVED;
   $('outcome-detail').hidden = phase !== E.Phase.RESOLVED;
   let title = 'READY TO ROLL?', detail = 'Two dice. One decision.', action = 'ROLL THE DICE';
   if (phase === E.Phase.ROLLED) { title = 'PICK A DIE TO REVEAL'; detail = 'Left or right. The choice is yours.'; }
