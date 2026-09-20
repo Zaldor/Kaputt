@@ -1,4 +1,4 @@
-// Mobile UI for the shared K3-E1 engine. Dice results never enter the DOM or
+﻿// Mobile UI for the shared K3-E1 engine. Dice results never enter the DOM or
 // renderer until they are revealed. Bot/LLM inputs are public-state snapshots.
 const $ = id => document.getElementById(id);
 const E = window.KaputtEngine;
@@ -65,13 +65,13 @@ function drawPenalties(id, count) {
 }
 function renderLab() {
   const p = match.players;
-  $('telemetry').textContent = `Turns ${match.turnNumber} · Extremes ${match.extremes} · Lead changes ${match.leadChanges}. P1 A/D ${p[0].attackCount}/${p[0].defenseCount} · P2 A/D ${p[1].attackCount}/${p[1].defenseCount}`;
+  $('telemetry').textContent = `Turns ${match.turnNumber} Â· Extremes ${match.extremes} Â· Lead changes ${match.leadChanges}. P1 A/D ${p[0].attackCount}/${p[0].defenseCount} Â· P2 A/D ${p[1].attackCount}/${p[1].defenseCount}`;
   $('botwhy').textContent = botReason;
   $('upload-status').textContent = uploadStatus;
   $('matrix').replaceChildren();
   const state = match.getPublicState();
   if ([E.Phase.FIRST, E.Phase.CHOSEN].includes(match.phase)) {
-    $('prob').textContent = `Visible die ${state.visibleDie} · Number to beat ${match.ntb}`;
+    $('prob').textContent = `Visible die ${state.visibleDie} Â· Number to beat ${match.ntb}`;
     const a = E.conditionalStats(state.visibleDie, match.ntb, 'attack');
     const d = E.conditionalStats(state.visibleDie, match.ntb, 'defense');
     const pct = n => `${(n * 100).toFixed(1)}%`;
@@ -101,7 +101,7 @@ function render() {
   document.querySelectorAll('.score-target').forEach(el => el.textContent = setup.target);
   $('opponent-name').textContent = playerLabel(opponent).toUpperCase();
   $('self-name').textContent = match.isTerminal ? (match.winner === me ? 'WINNER!' : 'GOOD GAME')
-    : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} · YOUR TURN` : `${setup.playerName || 'You'} · YOUR TURN`;
+    : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} Â· YOUR TURN` : `${setup.playerName || 'You'} Â· YOUR TURN`;
   $('opponent-score').textContent = players[opponent].score;
   $('self-score').textContent = players[me].score;
   $('opponent-kaputts').textContent = `${players[opponent].kaputt}/${setup.kaputtLimit}`;
@@ -109,7 +109,7 @@ function render() {
   drawPenalties('opponent-dots', players[opponent].kaputt);
   drawPenalties('self-dots', players[me].kaputt);
   $('ntb').textContent = match.ntb;
-  $('attack-short').textContent = `Multiply · beat ${match.ntb}`;
+  $('attack-short').textContent = `Multiply Â· beat ${match.ntb}`;
   const canAct = humanCanAct();
   for (let i = 0; i < 2; i++) {
     const button = $(i === 0 ? 'die-left' : 'die-right');
@@ -137,11 +137,11 @@ function render() {
     detail = lastResult.kaputt ? 'No points. The target holds.' : `${match.choice === 'attack' ? 'Attack' : 'Defense'} pays off.`;
     action = setup.mode === 'human' ? 'PASS THE TURN' : isBotTurn() ? 'YOUR TURN' : 'NEXT TURN';
   }
-  if (botThinking) { title = 'OPPONENT IS THINKING'; detail = 'Only the revealed die is visible to your opponent.'; action = 'THINKING…'; }
+  if (botThinking) { title = 'OPPONENT IS THINKING'; detail = 'Only the revealed die is visible to your opponent.'; action = 'THINKINGâ€¦'; }
   if (busy) { title = busyMessage; detail = ''; action = busyMessage; }
   if (match.isTerminal && !busy) {
     title = `${playerLabel(match.winner).toUpperCase()} WINS!`;
-    detail = `${match.winReason === 'score target' ? 'Score target reached' : 'Opponent reached the Kaputt limit'} · ${match.turnNumber} ${match.turnNumber === 1 ? 'turn' : 'turns'}`;
+    detail = `${match.winReason === 'score target' ? 'Score target reached' : 'Opponent reached the Kaputt limit'} Â· ${match.turnNumber} ${match.turnNumber === 1 ? 'turn' : 'turns'}`;
     action = 'PLAY AGAIN'; primary.disabled = false; primary.hidden = false;
   }
   $('turn-title').textContent = title;
@@ -166,7 +166,7 @@ async function rollTurn(bot = false) {
   if (busy || passing || match.isTerminal || match.phase !== E.Phase.IDLE || (!bot && isBotTurn())) return false;
   const token = version;
   match.roll(); displayedValues = [null, null]; lastResult = null; botReason = '';
-  busy = true; busyMessage = 'ROLLING…'; $('dice-stage').classList.add('rolling'); render(); sfx('roll');
+  busy = true; busyMessage = 'ROLLINGâ€¦'; $('dice-stage').classList.add('rolling'); render(); sfx('roll');
   await animation('roll');
   if (!valid(token)) return false;
   $('dice-stage').classList.remove('rolling'); busy = false; render();
@@ -177,7 +177,7 @@ async function revealFirst(index, bot = false) {
   if (busy || passing || match.isTerminal || match.phase !== E.Phase.ROLLED || (!bot && isBotTurn())) return false;
   const token = version;
   const result = match.revealFirst(index);
-  busy = true; busyMessage = 'REVEALING…'; render(); sfx('reveal');
+  busy = true; busyMessage = 'REVEALINGâ€¦'; render(); sfx('reveal');
   await animation('reveal', index, result.visibleDie);
   if (!valid(token)) return false;
   displayedValues[index] = result.visibleDie; scene?.setValues(displayedValues); busy = false; render();
@@ -194,17 +194,17 @@ function chooseAction(choice, bot = false) {
 async function resolveTurn(bot = false) {
   if (busy || passing || match.isTerminal || match.phase !== E.Phase.CHOSEN || (!bot && isBotTurn())) return false;
   const token = version;
-  busy = true; busyMessage = 'REVEALING…'; render();
+  busy = true; busyMessage = 'REVEALINGâ€¦'; render();
   const event = match.revealSecond();
   event.botReason = botReason || null;
   await animation('reveal', 1 - event.firstDieIndex, event.hiddenDie);
   if (!valid(token)) return false;
   lastResult = event; displayedValues = publicValues(); scene?.setValues(displayedValues); busy = false;
-  log(`#${event.turn} P${event.player + 1} ${event.choice} · ${event.visibleDie}/${event.hiddenDie} → ${event.value} · +${event.points}${event.kaputt ? ' KAPUTT' : ''}`);
+  log(`#${event.turn} P${event.player + 1} ${event.choice} Â· ${event.visibleDie}/${event.hiddenDie} â†’ ${event.value} Â· +${event.points}${event.kaputt ? ' KAPUTT' : ''}`);
   render(); sfx(match.isTerminal ? 'win' : event.kaputt ? 'kaputt' : 'success');
   if (match.isTerminal) { showPopup(match.winner === (setup.mode === 'human' ? event.player : 0) ? 'YOU WIN!' : 'GAME OVER', 'win'); }
-  else if (event.extreme && event.choice === 'attack') showPopup('EXTREME · 36', 'extreme');
-  else if (event.extreme && event.choice === 'defense') showPopup('EXTREME · 2', 'extreme');
+  else if (event.extreme && event.choice === 'attack') showPopup('EXTREME Â· 36', 'extreme');
+  else if (event.extreme && event.choice === 'defense') showPopup('EXTREME Â· 2', 'extreme');
   else if (event.kaputt) showPopup('KAPUTT!', 'kaputt');
   else if (event.points >= 20) showPopup(`+${event.points}`, 'success');
   announce(`${event.kaputt ? 'Kaputt. No points.' : `${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal ? ` ${playerLabel(match.winner)} wins.` : ''}`);
@@ -225,7 +225,7 @@ function nextTurn() {
   scene?.setValues(displayedValues);
   if (setup.mode === 'human') {
     passing = true;
-    $('pass-message').textContent = `${playerLabel(match.currentPlayer)}, you’re up.`;
+    $('pass-message').textContent = `${playerLabel(match.currentPlayer)}, youâ€™re up.`;
     render(); $('pass-dialog').showModal();
   } else { render(); if (isBotTurn()) runBot(version); }
 }
@@ -305,7 +305,7 @@ async function uploadMatch() {
   if (uploaded) return; uploaded = true;
   // D1 is available on the Worker deployment; GitHub Pages/local games remain playable.
   if (!location.hostname.endsWith('.workers.dev')) return;
-  const token = version; uploadStatus = 'Saving match…'; renderLab();
+  const token = version; uploadStatus = 'Saving matchâ€¦'; renderLab();
   try {
     const response = await fetch('/api/matches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload()) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -323,7 +323,7 @@ let modelRequest = 0;
 async function refreshModels() {
   const request = ++modelRequest, provider = $('llmprovider').value;
   if (!provider) return;
-  $('llmmodel').replaceChildren(new Option('Loading models…', ''));
+  $('llmmodel').replaceChildren(new Option('Loading modelsâ€¦', ''));
   $('llmkey').value = '';
   $('llmstatus').textContent = LLM.getApiKey(provider) ? 'Key saved in this browser.' : 'No key saved for this provider.';
   const models = await LLM.listModels(provider);
@@ -441,7 +441,7 @@ async function pollRoomState(code) {
       return;
     }
     const state = JSON.parse(room.current_state_json || '{}');
-    if ((room.status === 'playing' || room.status === 'finished') && (state.turn ?? 0) >= remoteLastTurn) {
+    if ((room.status === 'playing' || room.status === 'finished') && (state.turn ?? 0) > remoteLastTurn) {
       remoteLastTurn = state.turn ?? 0;
       document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
       syncRemoteState(state, room);
@@ -495,7 +495,6 @@ function syncRemoteState(state, room) {
   if (isMyTurn) {
     if ([E.Phase.IDLE, E.Phase.RESOLVED].includes(match.phase)) {
       match = E.createMatch({ target: state.target, kaputtLimit: state.kaputtLimit, startingNtb: state.ntb });
-      displayedValues = [null, null]; lastResult = null; scene?.setValues(displayedValues);
     }
     $('turn-title').textContent = match.phase === E.Phase.IDLE ? 'YOUR TURN' : $('turn-title').textContent;
     $('turn-detail').textContent = match.phase === E.Phase.IDLE ? 'Roll, reveal a die, choose Attack or Defense.' : $('turn-detail').textContent;
@@ -557,3 +556,5 @@ try {
   displayedValues = publicValues(); scene.setValues(displayedValues); render();
 } catch (error) { console.warn('3D dice unavailable; accessible dice enabled.', error.message); }
 showDialog('setup-dialog');
+
+// deploy-tick: 2026-09-20T15:37:34.9450012+02:00

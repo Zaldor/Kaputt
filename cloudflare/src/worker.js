@@ -53,8 +53,16 @@ async function getRoom(env,code){
 async function joinRoom(env,code,guestName){
   const room=await getRoom(env,code);
   if(!room)return{error:'Room not found'};
+  
+  if (room.status === 'playing' || room.status === 'finished') {
+    if (guestName === room.host_name) return {ok:true, room, playerIndex: 0};
+    if (guestName === room.guest_name) return {ok:true, room, playerIndex: 1};
+    return {error:'Room is already full and name does not match'};
+  }
+
   if(room.status!=='waiting')return{error:'Room not accepting players'};
   if(room.guest_name)return{error:'Room full'};
+  
   const first=Math.random()<0.5?0:1;
   const state={
     phase:'playing',currentPlayer:first,turn:0,
