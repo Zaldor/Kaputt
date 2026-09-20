@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const E = window.KaputtEngine;
 const LLM = window.KaputtLLM;
-let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1, playerName: 'You' };
+let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1, playerName: 'You', player2Name: 'Player 2' };
 let match = E.createMatch(setup);
 let version = 0, busy = false, passing = false, botThinking = false;
 let busyMessage = '', displayedValues = [null, null], lastResult = null;
@@ -18,7 +18,7 @@ const valid = token => token === version;
 const humanCanAct = () => !busy && !passing && !isBotTurn() && !match.isTerminal;
 const playerLabel = index => {
   if (index === 1 && setup.mode !== 'human') return ($('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent || 'Bot');
-  return index === 0 ? (setup.playerName || 'Player 1') : 'Player 2';
+  return index === 0 ? (setup.playerName || 'Player 1') : (setup.player2Name || 'Player 2');
 };
 function announce(text) { $('game-announcement').textContent = text; }
 function log(text) { events.unshift(text); $('log').textContent = events.join('\n'); }
@@ -349,11 +349,16 @@ $('open-rules').addEventListener('click', () => showDialog('rules-dialog'));
 $('open-lab').addEventListener('click', () => showDialog('lab-dialog'));
 for (const button of document.querySelectorAll('[data-close]')) button.addEventListener('click', () => $(button.dataset.close).close());
 $('toggle-sound').addEventListener('click', () => { sound = !sound; try { localStorage.setItem('kaputt-sound', sound ? 'on' : 'off'); } catch {} render(); });
-$('mode').addEventListener('change', () => { const show = $('mode').value.startsWith('llm_'); $('llmsettings').hidden = !show; if (show) populateLLM(); });
+$('mode').addEventListener('change', () => {
+  const isHuman = $('mode').value === 'human';
+  const isLLM = $('mode').value.startsWith('llm_');
+  $('llmsettings').hidden = !isLLM; if (isLLM) populateLLM();
+  const p2 = $('p2-name-label'); if (p2) p2.hidden = !isHuman;
+});
 $('setup-form').addEventListener('submit', event => {
   event.preventDefault();
   if (!$('setup-form').reportValidity()) return;
-  startMatch({ mode: $('mode').value, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value, playerName: ($('player-name')?.value || 'You').trim() || 'You' });
+  startMatch({ mode: $('mode').value, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value, playerName: ($('player-name')?.value || 'You').trim() || 'You', player2Name: ($('player2-name')?.value || 'Player 2').trim() || 'Player 2' });
 });
 $('llmprovider').addEventListener('change', refreshModels);
 $('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
