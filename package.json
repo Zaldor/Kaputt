@@ -6,14 +6,18 @@
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node --test lab/engine.test.js lab/simulator.test.js",
-    "check": "npm run build && npm test"
+    "test": "node --test lab/engine.test.js lab/simulator.test.js tests/*.test.mjs",
+    "check": "npm run build && npm test",
+    "cloudflare:preflight": "node scripts/deploy-cloudflare.mjs",
+    "cloudflare:deploy": "npm run check && node scripts/deploy-cloudflare.mjs --deploy"
   },
   "dependencies": {
     "three": "0.186.0"
   },
   "devDependencies": {
     "@phosphor-icons/core": "2.1.1",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "miniflare": "5.20260918.0-alpha",
+    "wrangler": "4.135.0"
   }
 }

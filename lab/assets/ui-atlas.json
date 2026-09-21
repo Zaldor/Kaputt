@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "image": "ui-atlas.webp",
+    "size": {
+      "w": 768,
+      "h": 736
+    },
+    "scale": "1",
+    "format": "RGBA8888",
+    "description": "Empty KAPUTT concept 3 action surfaces; built-in image generation with alpha; optimized from isolated source sprites. Keep text and icons as real interface content.",
+    "recommendedDisplaySize": {
+      "w": 192,
+      "h": 90
+    }
+  },
+  "frames": {
+    "button-blue": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 768,
+        "h": 360
+      },
+      "sourceSize": {
+        "w": 768,
+        "h": 360
+      },
+      "rotated": false,
+      "trimmed": false,
+      "contentSafeRect": {
+        "x": 68,
+        "y": 44,
+        "w": 632,
+        "h": 238
+      }
+    },
+    "button-lavender": {
+      "frame": {
+        "x": 0,
+        "y": 376,
+        "w": 768,
+        "h": 360
+      },
+      "sourceSize": {
+        "w": 768,
+        "h": 360
+      },
+      "rotated": false,
+      "trimmed": false,
+      "contentSafeRect": {
+        "x": 68,
+        "y": 44,
+        "w": 632,
+        "h": 238
+      }
+    }
+  }
+}

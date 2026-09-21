@@ -1,68 +1,36 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kaputt! — Leaderboard</title>
-<style>
-:root{font-family:system-ui,sans-serif;color-scheme:dark;background:#101114;color:#f4f4f5;--o:#ff7a1a}*{box-sizing:border-box}body{margin:0;padding:16px;max-width:800px;margin:auto}
-.card{background:#191b20;border:1px solid #30333b;border-radius:14px;padding:15px;margin-top:12px}
-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-h1{margin:.2em 0}h2{margin:0 0 .6em;font-size:18px}.accent{color:var(--o)}.muted{color:#a6abb5;font-size:13px}
-.nav{display:flex;gap:8px}.nav a{color:var(--o);text-decoration:none;padding:6px 12px;border:1px solid #444955;border-radius:8px;font-size:13px}.nav a:hover{background:#23262d}.nav a.active{background:var(--o);color:#111;border-color:var(--o)}
-.tabs{display:flex;gap:4px;margin-bottom:12px}.tab{padding:8px 16px;border:1px solid #444955;border-radius:8px;background:transparent;color:#a6abb5;cursor:pointer;font-size:13px;font-weight:600}.tab:hover{background:#23262d}.tab.active{background:var(--o);color:#111;border-color:var(--o)}
-table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}th,td{padding:8px 10px;border-bottom:1px solid #30333b;text-align:right}th{text-align:left;color:#a6abb5;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}td:first-child,th:first-child{text-align:left}
-.rank{color:#a6abb5;font-weight:600;min-width:28px}.name{font-weight:700;color:#fff}.win-rate{color:var(--o);font-weight:700}
-.empty{text-align:center;padding:40px;color:#a6abb5}
-.badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px}
-.badge{background:#121419;border:1px solid #30333b;border-radius:10px;padding:12px;text-align:center}
-.badge-icon{font-size:28px;margin-bottom:4px}.badge-label{font-weight:800;font-size:14px;color:var(--o)}.badge-player{font-weight:700;font-size:16px;color:#fff;margin:4px 0}.badge-value{font-size:12px;color:#a6abb5}.badge-desc{font-size:11px;color:#666;margin-top:2px}
-</style></head><body>
-<header><div><div class="muted">K3-E1 · competitive</div><h1>KAPUTT! <span class="accent">Leaderboard</span></h1></div>
-<nav class="nav"><a href="index.html">PLAY</a><a href="sim.html">SIMULATE</a></nav></header>
-
-<div class="card">
-<div class="tabs">
-  <button class="tab active" data-period="all">All Time</button>
-  <button class="tab" data-period="month">This Month</button>
-  <button class="tab" data-period="week">This Week</button>
-  <button class="tab" data-period="today">Today</button>
-</div>
-<table><thead><tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Win%</th><th>Matches</th><th>Avg Turns</th><th>Best</th></tr></thead><tbody id="lb-body"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody></table>
-</div>
-
-<div class="card">
-<h2>Badges</h2>
-<div class="badges" id="badges"><div class="empty">Loading badges...</div></div>
-</div>
-
-<script>
-const badgeIcons={speed_demon:'⚡',berserker:'⚔️',iron_wall:'🛡️',extreme_master:'💥',kaputt_magnet:'💀',marathon_runner:'🏃',high_scorer:'🏆',veteran:'🎖️',hold_champion:'🔒',undefeated:'👑'};
-(async()=>{
-  const tb=document.getElementById('lb-body');
-  const badgeDiv=document.getElementById('badges');
-  const tabs=document.querySelectorAll('.tab');
-  let currentPeriod='all';
-
-  async function loadLeaderboard(period){
-    tb.innerHTML='<tr><td colspan="8" class="empty">Loading...</td></tr>';
-    try{
-      const r=await fetch('/api/leaderboard?limit=50&period='+period);
-      const d=await r.json();
-      if(!d.ok||!d.players.length){tb.innerHTML='<tr><td colspan="8" class="empty">No matches recorded for this period.</td></tr>';return}
-      tb.innerHTML=d.players.map((p,i)=>`<tr><td class="rank">${i+1}</td><td class="name">${esc(p.name)}</td><td>${p.wins}</td><td>${p.losses}</td><td class="win-rate">${p.win_rate}%</td><td>${p.matches_played}</td><td>${p.avg_turns||'—'}</td><td>${p.best_score}</td></tr>`).join('');
-    }catch(e){tb.innerHTML='<tr><td colspan="8" class="empty">Could not load leaderboard.</td></tr>'}
-  }
-
-  async function loadBadges(){
-    badgeDiv.innerHTML='<div class="empty">Loading badges...</div>';
-    try{
-      const r=await fetch('/api/badges');
-      const d=await r.json();
-      if(!d.ok||!d.badges.length){badgeDiv.innerHTML='<div class="empty">No badges earned yet.</div>';return}
-      badgeDiv.innerHTML=d.badges.map(b=>`<div class="badge"><div class="badge-icon">${badgeIcons[b.id]||'🏅'}</div><div class="badge-label">${esc(b.label)}</div><div class="badge-player">${esc(b.player)}</div><div class="badge-value">${esc(b.value)}</div><div class="badge-desc">${esc(b.desc)}</div></div>`).join('');
-    }catch(e){badgeDiv.innerHTML='<div class="empty">Could not load badges.</div>'}
-  }
-
-  tabs.forEach(tab=>{tab.addEventListener('click',()=>{tabs.forEach(t=>t.classList.remove('active'));tab.classList.add('active');currentPeriod=tab.dataset.period;loadLeaderboard(currentPeriod)})});
-  function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-  loadLeaderboard('all');loadBadges();
-})();
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c65"><title>KAPUTT! — Leaderboard</title><link rel="stylesheet" href="game.css"><style>
+body{min-height:100svh;background:#fff1b3;color:#102459}.leaderboard-shell{max-width:620px;margin:auto;padding:24px 20px 40px}.board-nav{display:flex;justify-content:space-between;margin-bottom:28px}.board-nav a{display:flex;align-items:center;gap:8px;color:#173888;font-weight:700;min-height:44px}.board-nav img{width:22px}h1{font-size:36px;font-weight:900}.board-intro{margin:8px 0 22px;line-height:1.4;color:#4c5372}.ranking{list-style:none;margin:0;padding:0;display:grid;gap:12px}.ranking li{background:#fff9e9;border:1px solid #e4d6a6;border-radius:22px;padding:16px;box-shadow:0 3px 0 #e5d691}.rank-top{display:flex;align-items:center;gap:12px}.rank-number{background:#c6bdff;border-radius:50%;width:38px;height:38px;display:grid;place-items:center;font-weight:800;flex-shrink:0}.rank-name{font-size:22px;font-weight:800;overflow-wrap:anywhere;flex:1}.wins{font-weight:800;white-space:nowrap}.rank-stats{display:flex;gap:12px;flex-wrap:wrap;font-size:14px;color:#565b78;margin:12px 0 0 50px}.rank-stats b{color:#102459}.board-status{background:#fff9e9;border-radius:22px;padding:24px;line-height:1.5}.board-actions{margin-top:18px}#retry{min-width:130px}.footnote{font-size:14px;color:#565b78;margin-top:24px;line-height:1.4}
+.periods{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}.periods button{min-height:44px;padding:8px 12px;border:1px solid #b2a3d5;border-radius:12px;background:#fff9e9;font-weight:700}.periods button[aria-pressed="true"]{background:#173888;color:white;border-color:#173888}.badges{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px}.badge{background:#c6bdff;border:1px solid #f2edff;border-radius:20px;padding:18px 12px;text-align:center}.badge img{width:30px;height:30px}.badge h3{font-size:18px;margin:6px 0}.badge p{font-size:16px;overflow-wrap:anywhere}.badge small{display:block;font-size:13px;margin-top:6px;color:#424b6d}#badge-heading{margin-top:32px;font-size:26px}#badge-status{margin:14px 0;line-height:1.4}#badge-retry{margin-top:12px}
+</style></head><body><main class="leaderboard-shell"><nav class="board-nav"><a href="index.html"><img src="assets/icons/arrow-left-bold.svg" alt="">Back to game</a><a href="sim.html">Simulation lab</a></nav><h1>THE LEADERBOARD</h1><p class="board-intro">Big calls. Close games. See who’s on top.</p><div class="periods" role="group" aria-label="Leaderboard period"><button data-period="all" aria-pressed="true">All time</button><button data-period="month" aria-pressed="false">Month</button><button data-period="week" aria-pressed="false">Week</button><button data-period="today" aria-pressed="false">Today</button></div><p id="status" class="board-status" role="status">Loading standings…</p><ol id="ranking" class="ranking" aria-label="Player rankings"></ol><div class="board-actions"><button id="retry" class="small-button" hidden>Try again</button><a id="online-game" href="https://kaputt-lab.crafthead.workers.dev/leaderboard.html" hidden>Open the online leaderboard</a></div><h2 id="badge-heading">BADGES</h2><p id="badge-status" role="status">Loading badges…</p><div class="badges" id="badges"></div><button class="small-button" id="badge-retry" hidden>Retry badges</button><p class="footnote">Ranked by wins, then win rate. Includes recorded online, pass & play, and bot matches. Periods use UTC; weeks start Monday. Badges cover all time. Player identities distinguish new players with the same name; older records retain their original name grouping.</p></main><script type="module">
+import {enter} from './motion.js';
+const status=document.getElementById('status'),ranking=document.getElementById('ranking'),retry=document.getElementById('retry');
+let currentPeriod="all",request=0;
+async function load(){
+  const revision=++request;
+  retry.hidden=true;status.hidden=false;status.textContent='Loading standings…';
+  try{
+    const r=await fetch('/api/leaderboard?limit=50&period='+currentPeriod,{cache:'no-store',signal:AbortSignal.timeout(9000)});if(!r.ok)throw new Error();const d=await r.json();if(!d.ok)throw new Error();if(revision!==request)return;ranking.replaceChildren();
+    if(!d.players.length){status.textContent='No finished matches in this period. Play a round to get on the board.';return;}
+    status.hidden=true;
+    d.players.forEach((p,i)=>{
+      const row=document.createElement('li'),top=document.createElement('div');top.className='rank-top';
+      for(const [className,text]of [['rank-number',i+1],['rank-name',p.name],['wins',`${p.wins} ${p.wins===1?'win':'wins'}`]]){const span=document.createElement('span');span.className=className;span.textContent=text;top.append(span);}
+      const stats=document.createElement('p');stats.className='rank-stats';
+      for(const [value,label]of [[p.win_rate+'%','win rate'],[p.losses,'losses'],[p.matches_played,p.matches_played===1?'match':'matches'],[p.avg_turns,'avg turns'],[p.best_score,'best score']]){const span=document.createElement('span'),b=document.createElement('b');b.textContent=value;span.append(b,' '+label);stats.append(span);}
+      row.append(top,stats);ranking.append(row);if(i<8)enter(row);
+    });
+  }catch{if(revision!==request)return;ranking.replaceChildren();status.textContent='Standings couldn’t load. Your game is still available.';retry.hidden=false;document.getElementById('online-game').hidden=location.hostname.endsWith('.workers.dev')||location.hostname==='terminal.local';}
+}
+for(const button of document.querySelectorAll('[data-period]'))button.addEventListener('click',()=>{currentPeriod=button.dataset.period;document.querySelectorAll('[data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));load();});
+async function loadBadges(){
+  const root=document.getElementById('badges'),message=document.getElementById('badge-status'),again=document.getElementById('badge-retry');
+  again.hidden=true;message.hidden=false;message.textContent='Loading badges…';
+  try{
+    const r=await fetch('/api/badges',{cache:'no-store',signal:AbortSignal.timeout(9000)});if(!r.ok)throw new Error();const d=await r.json();if(!d.ok)throw new Error();root.replaceChildren();
+    message.hidden=!!d.badges.length;message.textContent='No badges earned yet.';
+    for(const badge of d.badges){const card=document.createElement('article');card.className='badge';const icon=document.createElement('img');icon.src='assets/icons/trophy-fill.svg';icon.alt='';card.append(icon);for(const [tag,text]of [['h3',badge.label],['p',badge.player],['small',badge.value],['small',badge.desc]]){const el=document.createElement(tag);el.textContent=text;card.append(el);}root.append(card);}
+  }catch{message.textContent='Badges couldn’t load.';again.hidden=false;}
+}
+document.getElementById('badge-retry').addEventListener('click',loadBadges);
+retry.addEventListener('click',load);load();loadBadges();
 </script></body></html>

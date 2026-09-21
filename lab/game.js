@@ -1,262 +1,195 @@
-﻿// Mobile UI for the shared K3-E1 engine. Dice results never enter the DOM or
-// renderer until they are revealed. Bot/LLM inputs are public-state snapshots.
-const $ = id => document.getElementById(id);
-const E = window.KaputtEngine;
-const LLM = window.KaputtLLM;
-
-// Player identity: UUID stored in localStorage, sent with all API requests
-function getPlayerUUID() {
-  let uuid = sessionStorage.getItem('kaputt-player-uuid');
-  if (!uuid) {
-    uuid = crypto.randomUUID();
-    sessionStorage.setItem('kaputt-player-uuid', uuid);
-  }
-  return uuid;
+import {RemoteClient, randomId, playerIdentity} from './remote-client.js';
+import {animate, enter, bump, shake, number, celebrate, cancelMotion, reduced, toggleMotion, motionEnabled} from './motion.js';
+import {queueMatch, flushMatches, pendingMatches} from './match-outbox.js';
+const $=id=>document.getElementById(id), E=window.KaputtEngine, LLM=window.KaputtLLM;
+let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:'You',player2Name:'Player 2'};
+let match=E.createMatch(setup), matchId=randomId();
+let version=0,busy=false,passing=false,botThinking=false,busyMessage='';
+let scene=null,botWorker=null,botCancel=null,botReason='',displayedValues=[null,null],lastResult=null;
+let events=['Match started.'],uploaded=false,uploadStatus='',sound=true,audioContext=null;
+let connection={connected:false,pending:false,sending:false,message:''},remoteRoom=null,roomBusy=false;
+try{sound=localStorage.getItem('kaputt-sound')!=='off';}catch{}
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const valid=token=>token===version;
+const online=()=>setup.mode==='remote';
+const isBotTurn=()=>!online() && setup.mode!=='human' && match.currentPlayer===1;
+const me=()=>online()?(remoteRoom?.playerIndex??0):setup.mode==='human'?match.currentPlayer:0;
+const playerLabel=index=>online()?match.players[index]?.name||'Friend':index===0?setup.playerName:setup.mode==='human'?setup.player2Name:$('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent||'Bot';
+const humanCanAct=()=>!busy&&!passing&&!match.isTerminal&&(online()?remoteRoom?.status==='playing'&&connection.connected&&!connection.sending&&!connection.pending&&match.currentPlayer===me():!isBotTurn());
+function announce(text){$('game-announcement').textContent=text;}
+function log(text){events.unshift(text);$('log').textContent=events.join('\n');}
+function tone(freq,duration=.09,delay=0,type='sine'){
+  if(!sound||document.hidden)return;
+  try{
+    audioContext ||= new (window.AudioContext||window.webkitAudioContext)();
+    if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
+    const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),start=audioContext.currentTime+delay;
+    oscillator.type=type;oscillator.frequency.value=freq;gain.gain.setValueAtTime(.035,start);gain.gain.exponentialRampToValueAtTime(.001,start+duration);
+    oscillator.connect(gain);gain.connect(audioContext.destination);oscillator.start(start);oscillator.stop(start+duration);
+  }catch{}
 }
-const PLAYER_UUID = getPlayerUUID();
-
-let setup = { mode: 'human', target: 100, kaputtLimit: 5, startingNtb: 1, playerName: 'You', player2Name: 'Player 2' };
-let match = E.createMatch(setup);
-let version = 0, busy = false, passing = false, botThinking = false;
-let busyMessage = '', displayedValues = [null, null], lastResult = null;
-let scene = null, botWorker = null, botCancel = null, botReason = '';
-let uploaded = false, uploadStatus = '', events = ['Match started.'];
-let sound = true, audioContext = null;
-try { sound = localStorage.getItem('kaputt-sound') !== 'off'; } catch {}
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const isBotTurn = () => setup.mode !== 'human' && match.currentPlayer === 1;
-const valid = token => token === version;
-const humanCanAct = () => {
-  if (busy || passing || match.isTerminal) return false;
-  if (setup.mode === 'remote') {
-    if (!remoteRoom || remotePlayerIndex === null) return false;
-    try { const s = JSON.parse(remoteRoom.current_state_json || '{}'); return s.currentPlayer === remotePlayerIndex && s.phase === 'playing'; } catch { return false; }
-  }
-  return !isBotTurn();
-};
-const playerLabel = index => {
-  if (index === 1 && setup.mode !== 'human') return ($('mode').querySelector(`option[value="${setup.mode}"]`)?.textContent || 'Bot');
-  return index === 0 ? (setup.playerName || 'Player 1') : (setup.player2Name || 'Player 2');
-};
-function announce(text) { $('game-announcement').textContent = text; }
-function log(text) { events.unshift(text); $('log').textContent = events.join('\n'); }
-function tone(freq, duration = .09, delay = 0, type = 'sine') {
-  if (!sound) return;
-  try {
-    audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
-    const oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
-    const start = audioContext.currentTime + delay;
-    oscillator.type = type; oscillator.frequency.value = freq;
-    gain.gain.setValueAtTime(.035, start); gain.gain.exponentialRampToValueAtTime(.001, start + duration);
-    oscillator.connect(gain); gain.connect(audioContext.destination);
-    oscillator.start(start); oscillator.stop(start + duration);
-  } catch {}
+function sfx(kind){
+  if(kind==='roll')for(let i=0;i<5;i++)tone(140+i*35,.035,i*.06,'triangle');
+  else if(kind==='kaputt'){tone(170,.15);tone(90,.24,.1);}
+  else if(kind==='win')[440,550,660,880].forEach((f,i)=>tone(f,.18,i*.08));
+  else if(kind==='success'){tone(440,.1);tone(660,.14,.08);}
+  else tone(520,.07,0,'triangle');
 }
-function sfx(kind) {
-  if (kind === 'roll') { for (let i = 0; i < 5; i++) tone(140 + i * 35, .035, i * .06, 'triangle'); }
-  else if (kind === 'kaputt') { tone(170, .15); tone(90, .24, .1); }
-  else if (kind === 'win') { [440, 550, 660, 880].forEach((f, i) => tone(f, .18, i * .08)); }
-  else if (kind === 'success') { tone(440, .1); tone(660, .14, .08); }
-  else tone(520, .07, 0, 'triangle');
+function showPopup(text,kind){
+  const el=$('event-popup');$('event-popup-text').textContent=text;el.className=`event-popup pop-${kind}`;
+  animate(el,[{opacity:0,transform:'translate(-50%,-50%) scale(.7)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.05)',offset:.15},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.7},{opacity:0,transform:'translate(-50%,-65%) scale(.98)'}],1400);
 }
-function showPopup(text, kind) {
-  const el = $('event-popup'), span = $('event-popup-text');
-  span.textContent = text;
-  el.className = `event-popup pop-${kind} show`;
-  el.onanimationend = () => { el.className = 'event-popup'; };
+function drawPenalties(id,count){
+  const root=$(id);root.classList.toggle('many',setup.kaputtLimit>5);
+  while(root.children.length>setup.kaputtLimit)root.lastChild.remove();
+  while(root.children.length<setup.kaputtLimit){const dot=document.createElement('span');dot.className='penalty-dot';root.append(dot);}
+  [...root.children].forEach((dot,i)=>{const filled=i<count;if(filled&&!dot.classList.contains('filled'))bump(dot);dot.classList.toggle('filled',filled);});
 }
-function drawPenalties(id, count) {
-  const root = $(id); root.replaceChildren();
-  root.classList.toggle('many', setup.kaputtLimit > 5);
-  for (let i = 0; i < setup.kaputtLimit; i++) {
-    const dot = document.createElement('span');
-    dot.className = `penalty-dot${i < count ? ' filled' : ''}`; root.append(dot);
-  }
-}
-function renderLab() {
-  const p = match.players;
-  $('telemetry').textContent = `Turns ${match.turnNumber} Â· Extremes ${match.extremes} Â· Lead changes ${match.leadChanges}. P1 A/D ${p[0].attackCount}/${p[0].defenseCount} Â· P2 A/D ${p[1].attackCount}/${p[1].defenseCount}`;
-  $('botwhy').textContent = botReason;
-  $('upload-status').textContent = uploadStatus;
-  $('matrix').replaceChildren();
-  const state = match.getPublicState();
-  if ([E.Phase.FIRST, E.Phase.CHOSEN].includes(match.phase)) {
-    $('prob').textContent = `Visible die ${state.visibleDie} Â· Number to beat ${match.ntb}`;
-    const a = E.conditionalStats(state.visibleDie, match.ntb, 'attack');
-    const d = E.conditionalStats(state.visibleDie, match.ntb, 'defense');
-    const pct = n => `${(n * 100).toFixed(1)}%`;
-    for (const [label, av, dv] of [
-      ['P(> target)', pct(a.success), pct(d.success)],
-      ['P(Kaputt)', pct(a.kaputt), pct(d.kaputt)],
-      ['Expected points', a.points.toFixed(2), d.points.toFixed(2)],
-      ['Expected next target', a.nextNtb.toFixed(2), d.nextNtb.toFixed(2)],
-      ['P(Extreme)', pct(a.extreme), pct(d.extreme)],
-    ]) {
-      const row = document.createElement('tr');
-      for (const value of [label, av, dv]) { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }
-      $('matrix').append(row);
+function renderLab(){
+  const p=match.players;
+  $('telemetry').textContent=`Turns ${match.turnNumber} · Extremes ${match.extremes} · Lead changes ${match.leadChanges}. P1 A/D ${p[0].attackCount}/${p[0].defenseCount} · P2 A/D ${p[1].attackCount}/${p[1].defenseCount}`;
+  $('botwhy').textContent=botReason;$('upload-status').textContent=online()?(match.isTerminal?'This online match is saved.':'Online turns are saved as you play.'):uploadStatus;
+  $('retry-upload').hidden=!pendingMatches();$('matrix').replaceChildren();
+  const state=match.getPublicState();
+  if(['first','chosen'].includes(match.phase)){
+    $('prob').textContent=`Visible die ${state.visibleDie} · Number to beat ${match.ntb}`;
+    const a=E.conditionalStats(state.visibleDie,match.ntb,'attack'),d=E.conditionalStats(state.visibleDie,match.ntb,'defense'),pct=n=>`${(n*100).toFixed(1)}%`;
+    for(const [label,av,dv] of [['P(> target)',pct(a.success),pct(d.success)],['P(Kaputt)',pct(a.kaputt),pct(d.kaputt)],['Expected points',a.points.toFixed(2),d.points.toFixed(2)],['Expected next target',a.nextNtb.toFixed(2),d.nextNtb.toFixed(2)],['P(Extreme)',pct(a.extreme),pct(d.extreme)]]){
+      const row=document.createElement('tr');for(const value of [label,av,dv]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}$('matrix').append(row);
     }
-  } else $('prob').textContent = 'Reveal one die to see conditional outcomes.';
+  }else $('prob').textContent='Reveal one die to see conditional outcomes.';
 }
-function render() {
-  const state = match.getPublicState();
-  const phase = match.phase;
-  const me = setup.mode === 'human' ? match.currentPlayer : 0, opponent = 1 - me;
-  const players = match.players;
-  $('game').dataset.phase = busy ? 'animating' : phase;
-  $('game').dataset.terminal = String(match.isTerminal);
-  $('game').dataset.passing = String(passing);
-  if (setup.mode !== 'remote') {
-    $('target-label').textContent = setup.target;
-    document.querySelectorAll('.score-target').forEach(el => el.textContent = setup.target);
-    $('opponent-name').textContent = playerLabel(opponent).toUpperCase();
-    $('self-name').textContent = match.isTerminal ? (match.winner === me ? 'WINNER!' : 'GOOD GAME')
-      : isBotTurn() ? setup.playerName || 'Player 1' : setup.mode === 'human' && me === 1 ? `${setup.playerName || 'Player 2'} · YOUR TURN` : `${setup.playerName || 'You'} · YOUR TURN`;
-    $('opponent-score').textContent = players[opponent].score;
-    $('self-score').textContent = players[me].score;
-    $('opponent-kaputts').textContent = `${players[opponent].kaputt}/${setup.kaputtLimit}`;
-    $('self-kaputts').textContent = `${players[me].kaputt}/${setup.kaputtLimit}`;
-    drawPenalties('opponent-dots', players[opponent].kaputt);
-    drawPenalties('self-dots', players[me].kaputt);
-    $('ntb').textContent = match.ntb;
+function renderConnection(){
+  const bar=$('connection-bar');bar.hidden=!online();$('open-room').hidden=!online();
+  if(!online())return;
+  bar.dataset.connected=String(connection.connected);
+  const room=remoteRoom,other=room?.presence?.[1-me()]?.online;
+  let text=connection.sending?'Sending your move…':connection.pending?'Move pending. Retry safely.':!connection.connected?'Reconnecting…':room?.status==='waiting'?`Room ${room.code} · Waiting for a friend`:room?.status==='closed'?'Your opponent left. Start a new match.':`Room ${room?.code||remote.session?.code||''} · ${other?'Friend connected':'Waiting for friend to reconnect'}`;
+  if(connection.message&&!connection.connected)text=connection.message;
+  $('connection-text').textContent=text;$('retry-connection').hidden=connection.connected&&!connection.pending||connection.sending;
+  if(room){
+    $('lobby-code').textContent=room.code;$('lobby-status').textContent=room.status==='waiting'?'Waiting for a friend to join…':room.status==='closed'?'This room has closed.':other?'You’re both connected. Game on!':'Your friend can reconnect on their original device.';
+    $('lobby-rules').textContent=`First to ${room.target} · ${room.kaputtLimit} Kaputts · Starting target ${room.startingNtb}`;
   }
-  $('attack-short').textContent = `Multiply Â· beat ${match.ntb}`;
-  const canAct = humanCanAct();
-  for (let i = 0; i < 2; i++) {
-    const button = $(i === 0 ? 'die-left' : 'die-right');
-    const location = i === 0 ? 'Left' : 'Right';
-    const value = displayedValues[i];
-    const canReveal = canAct && (phase === E.Phase.ROLLED || (phase === E.Phase.CHOSEN && i !== state.firstDieIndex));
-    button.disabled = !canReveal;
-    button.setAttribute('aria-label', value === null ? `${canReveal ? 'Reveal ' : ''}${location.toLowerCase()} die${canReveal ? '' : ', hidden'}` : `${location} die: ${value}`);
-    button.querySelector('.die-fallback').textContent = value ?? '?';
-    button.querySelector('.die-fallback').classList.toggle('revealed', value !== null);
-  }
-  const decisionVisible = phase === E.Phase.FIRST && !busy && !isBotTurn();
-  $('decision-actions').hidden = !decisionVisible;
-  $('attack').disabled = !decisionVisible || !canAct;
-  $('defense').disabled = !decisionVisible || !canAct;
-  const primary = $('primary-action');
-  primary.hidden = decisionVisible || (!busy && !isBotTurn() && phase === E.Phase.ROLLED) || (setup.mode === 'remote' && phase === E.Phase.RESOLVED);
-  primary.disabled = busy || passing || (isBotTurn() && phase !== E.Phase.RESOLVED);
-  let title = 'READY TO ROLL?', detail = 'Two dice. One decision.', action = 'ROLL THE DICE';
-  if (phase === E.Phase.ROLLED) { title = 'PICK A DIE TO REVEAL'; detail = 'Left or right. The choice is yours.'; }
-  if (phase === E.Phase.FIRST) { title = 'CHOOSE YOUR MOVE'; detail = ''; }
-  if (phase === E.Phase.CHOSEN) { title = `${match.choice.toUpperCase()} LOCKED IN`; detail = 'Your move is set. Reveal the other die.'; action = 'REVEAL SECOND DIE'; }
-  if (phase === E.Phase.RESOLVED && lastResult) {
-    title = lastResult.kaputt ? 'KAPUTT!' : lastResult.extreme ? `EXTREME! +${lastResult.points}` : `+${lastResult.points} POINTS`;
-    detail = lastResult.kaputt ? 'No points. The target holds.' : `${match.choice === 'attack' ? 'Attack' : 'Defense'} pays off.`;
-    action = setup.mode === 'remote' ? 'WAITING FOR OPPONENT' : setup.mode === 'human' ? 'PASS THE TURN' : isBotTurn() ? 'YOUR TURN' : 'NEXT TURN';
-  }
-  if (botThinking) { title = 'OPPONENT IS THINKING'; detail = 'Only the revealed die is visible to your opponent.'; action = 'THINKINGâ€¦'; }
-  if (busy) { title = busyMessage; detail = ''; action = busyMessage; }
-  if (match.isTerminal && !busy) {
-    title = `${playerLabel(match.winner).toUpperCase()} WINS!`;
-    detail = `${match.winReason === 'score target' ? 'Score target reached' : 'Opponent reached the Kaputt limit'} Â· ${match.turnNumber} ${match.turnNumber === 1 ? 'turn' : 'turns'}`;
-    action = 'PLAY AGAIN'; primary.disabled = false; primary.hidden = false;
-  }
-  $('turn-title').textContent = title;
-  $('turn-detail').textContent = detail;
-  $('primary-label').textContent = action;
-  $('toggle-sound').setAttribute('aria-pressed', String(sound));
-  $('sound-label').textContent = sound ? 'Sound on' : 'Sound off';
-  renderLab();
 }
-function publicValues() {
-  const state = match.getPublicState();
-  const values = [null, null];
-  if (state.visibleDie !== null) values[state.firstDieIndex] = state.visibleDie;
-  if (match.phase === E.Phase.RESOLVED && lastResult) values[1 - state.firstDieIndex] = lastResult.hiddenDie;
+function render(){
+  const state=match.getPublicState(),phase=match.phase,self=me(),other=1-self,canAct=humanCanAct();
+  $('game').dataset.phase=busy?'animating':phase;$('game').dataset.terminal=String(match.isTerminal);$('game').dataset.passing=String(passing);
+  $('target-label').textContent=setup.target;document.querySelectorAll('.score-target').forEach(el=>el.textContent=setup.target);
+  $('opponent-name').textContent=playerLabel(other).toUpperCase();
+  $('self-name').textContent=match.isTerminal?(match.winner===self?'WINNER!':'GOOD GAME'):`${playerLabel(self)}${match.currentPlayer===self?' · YOUR TURN':''}`;
+  number($('opponent-score'),match.players[other].score);number($('self-score'),match.players[self].score);number($('ntb'),match.ntb);
+  for(const [prefix,index] of [['opponent',other],['self',self]]){$(`${prefix}-kaputts`).textContent=`${match.players[index].kaputt}/${setup.kaputtLimit}`;drawPenalties(`${prefix}-dots`,match.players[index].kaputt);}
+  $('explanation-target').textContent=match.ntb;
+  $('attack-short').textContent=`Multiply · beat ${match.ntb}`;
+  for(let i=0;i<2;i++){
+    const button=$(i?'die-right':'die-left'),value=displayedValues[i],canReveal=canAct&&(phase==='rolled'||phase==='chosen'&&i!==state.firstDieIndex);
+    button.disabled=!canReveal;button.setAttribute('aria-label',value===null?`${canReveal?'Reveal ':''}${i?'right':'left'} die${canReveal?'':', hidden'}`:`${i?'Right':'Left'} die: ${value}`);
+    button.querySelector('.die-fallback').textContent=value??'?';button.querySelector('.die-fallback').classList.toggle('revealed',value!==null);
+  }
+  const decisionVisible=phase==='first'&&!busy&&!isBotTurn()&&(!online()||match.currentPlayer===self);
+  $('decision-actions').hidden=!decisionVisible;$('choice-explanations').hidden=!decisionVisible;$('attack').disabled=!canAct;$('defense').disabled=!canAct;
+  const primary=$('primary-action');primary.hidden=decisionVisible||phase==='rolled'&&!busy&&canAct;
+  primary.disabled=!canAct;
+  let title='READY TO ROLL?',detail='Two dice. One decision.',action='ROLL THE DICE';
+  if(phase==='rolled'){title='PICK A DIE TO REVEAL';detail='Left or right. The choice is yours.';action='CHOOSE A DIE';}
+  if(phase==='first'){title='CHOOSE YOUR MOVE';detail='';action='CHOOSING A MOVE';}
+  if(phase==='chosen'){title=`${match.choice.toUpperCase()} LOCKED IN`;detail='Your move is set. Reveal the other die.';action='REVEAL SECOND DIE';}
+  if(phase==='resolved'&&lastResult){
+    title=lastResult.kaputt?'KAPUTT!':lastResult.extreme?`EXTREME! +${lastResult.points}`:`+${lastResult.points} POINTS`;
+    detail=lastResult.kaputt?'No points. The target holds.':`${playerLabel(lastResult.player)} banks ${lastResult.points}.`;
+    action=online()?'YOUR TURN':setup.mode==='human'?'PASS THE TURN':isBotTurn()?'YOUR TURN':'NEXT TURN';
+    // Local engine changes player on nextTurn; online engine does so on resolve.
+    if(!online())primary.disabled=busy||passing;
+  }
+  $('outcome-detail').hidden=phase!=='resolved'||!lastResult||busy;
+  if(lastResult)$('outcome-detail').textContent=lastResult.extreme?(lastResult.choice==='attack'?'1 & 6: Extreme Attack becomes 36.':'1 & 6: Extreme Defense scores 1 and sets the target to 2.'):`${lastResult.visibleDie} ${lastResult.choice==='attack'?'×':'+'} ${lastResult.hiddenDie} = ${lastResult.value}. ${lastResult.kaputt?`Must beat ${lastResult.ntbBefore}.`:`New target: ${lastResult.ntbAfter}.`}`;
+  if(online()&&match.currentPlayer!==self&&!match.isTerminal){
+    if(phase!=='resolved')title=`${playerLabel(other).toUpperCase()}’S TURN`;
+    detail=phase==='rolled'?'Your friend is choosing a die.':phase==='first'?'Your friend is deciding: Attack or Defense.':phase==='chosen'?'Move locked. Waiting for the second reveal.':'Watch their move, then make yours.';
+    action='WAITING FOR FRIEND';primary.hidden=false;primary.disabled=true;
+  }
+  if(botThinking){title='OPPONENT IS THINKING';detail='Your opponent sees only the revealed die.';action='THINKING…';}
+  if(busy){title=busyMessage;detail='';action=busyMessage;primary.disabled=true;}
+  if(match.isTerminal&&!busy){
+    title=`${playerLabel(match.winner).toUpperCase()} WINS!`;detail=`${match.winReason==='score target'?'Score target reached':'Kaputt limit reached'} · ${match.turnNumber} ${match.turnNumber===1?'turn':'turns'}`;
+    action=online()?(remoteRoom.state.rematchReady[self]?'REMATCH REQUESTED':'PLAY AGAIN'):'PLAY AGAIN';primary.hidden=false;
+    primary.disabled=online()&&(!connection.connected||connection.sending||connection.pending||remoteRoom.state.rematchReady[self]);
+    if(online()&&remoteRoom.state.rematchReady[other])detail='Your friend wants a rematch. Ready?';
+    if(online()&&remoteRoom.state.rematchReady[self])detail='Waiting for your friend to accept the rematch.';
+  }
+  if(online()&&connection.fatal){title='ROOM UNAVAILABLE';detail='Your saved match history has not been deleted.';action='NEW MATCH';primary.hidden=false;primary.disabled=false;}
+  if(online()&&remoteRoom?.status==='waiting'){title='WAITING FOR A FRIEND';detail=`Share room ${remoteRoom.code} to get started.`;action='VIEW ROOM';primary.hidden=false;primary.disabled=false;}
+  if(online()&&remoteRoom?.status==='closed'){title='ROOM CLOSED';detail='Your match history is still available in Match lab.';action='NEW MATCH';primary.hidden=false;primary.disabled=false;}
+  if($('turn-title').textContent!==title){$('turn-title').textContent=title;enter($('turn-message'));}
+  $('turn-detail').textContent=detail;$('primary-label').textContent=action;
+  $('toggle-sound').setAttribute('aria-pressed',String(sound));$('sound-label').textContent=sound?'Sound on':'Sound off';
+  $('toggle-motion').setAttribute('aria-pressed',String(motionEnabled()));$('motion-label').textContent=motionEnabled()?'Animations on':'Animations off';
+  renderConnection();if($('lab-dialog').open)renderLab();
+}
+function publicValues(){
+  if(online())return remoteRoom?.state?.values||[null,null];
+  const state=match.getPublicState(),values=[null,null];
+  if(state.visibleDie!==null)values[state.firstDieIndex]=state.visibleDie;
+  if(match.phase==='resolved'&&lastResult)values[1-state.firstDieIndex]=lastResult.hiddenDie;
   return values;
 }
-async function animation(kind, index, value) {
-  if (scene) return kind === 'roll' ? scene.roll() : scene.reveal(index, value);
-  if (!reduceMotion()) await sleep(kind === 'roll' ? 900 : 220);
+async function animation(kind,index,value){
+  if(scene)return kind==='roll'?scene.roll():scene.reveal(index,value);
+  if(!reduced())await sleep(kind==='roll'?900:220);
 }
-async function rollTurn(bot = false) {
-  if (busy || passing || match.isTerminal || match.phase !== E.Phase.IDLE || (!bot && isBotTurn())) return false;
-  const token = version;
-  match.roll(); displayedValues = [null, null]; lastResult = null; botReason = '';
-  busy = true; busyMessage = 'ROLLINGâ€¦'; $('dice-stage').classList.add('rolling'); render(); sfx('roll');
-  await animation('roll');
-  if (!valid(token)) return false;
-  $('dice-stage').classList.remove('rolling'); busy = false; render();
-  announce('Both dice are hidden. Choose the left or right die to reveal.');
-  return true;
+function resultFeedback(event){
+  log(`#${event.turn} ${playerLabel(event.player)} ${event.choice} · ${event.visibleDie}/${event.hiddenDie} → ${event.value} · +${event.points}${event.kaputt?' KAPUTT':''}`);
+  sfx(match.isTerminal?'win':event.kaputt?'kaputt':'success');
+  if(event.kaputt)shake(document.querySelector(event.player===me()?'.you':'.opponent'));
+  if(match.isTerminal){showPopup(`${playerLabel(match.winner).toUpperCase()} WINS!`,'win');celebrate($('celebration'));}
+  else if(event.extreme)showPopup(`EXTREME · ${event.value}`,'extreme');
+  else if(event.kaputt)showPopup('KAPUTT!','kaputt');
+  else showPopup(`+${event.points} POINTS`,'success');
+  if(!reduced()&&navigator.vibrate)navigator.vibrate(event.kaputt?[25,35,25]:18);
+  announce(`${event.kaputt?'Kaputt. No points.':`${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal?` ${playerLabel(match.winner)} wins.`:''}`);
 }
-async function revealFirst(index, bot = false) {
-  if (busy || passing || match.isTerminal || match.phase !== E.Phase.ROLLED || (!bot && isBotTurn())) return false;
-  const token = version;
-  const result = match.revealFirst(index);
-  busy = true; busyMessage = 'REVEALINGâ€¦'; render(); sfx('reveal');
-  await animation('reveal', index, result.visibleDie);
-  if (!valid(token)) return false;
-  displayedValues[index] = result.visibleDie; scene?.setValues(displayedValues); busy = false; render();
-  announce(`${index === 0 ? 'Left' : 'Right'} die is ${result.visibleDie}. Choose Attack or Defense before revealing the other die.`);
-  return true;
+async function rollTurn(bot=false){
+  if(busy||passing||match.isTerminal||match.phase!=='idle'||!bot&&isBotTurn())return false;
+  const token=version;match.roll();displayedValues=[null,null];lastResult=null;botReason='';busy=true;busyMessage='ROLLING…';
+  $('dice-stage').classList.add('rolling');render();sfx('roll');await animation('roll');if(!valid(token))return false;
+  $('dice-stage').classList.remove('rolling');busy=false;render();announce('Both dice are hidden. Choose either die to reveal.');return true;
 }
-function chooseAction(choice, bot = false) {
-  if (busy || passing || match.isTerminal || match.phase !== E.Phase.FIRST || (!bot && isBotTurn())) return false;
-  match.choose(choice); sfx('reveal'); render();
-  announce(`${choice} committed. Reveal the other die.`);
-  resolveTurn(bot);
-  return true;
+async function revealFirst(index,bot=false){
+  if(busy||passing||match.isTerminal||match.phase!=='rolled'||!bot&&isBotTurn())return false;
+  const token=version,result=match.revealFirst(index);busy=true;busyMessage='REVEALING…';render();sfx('reveal');
+  await animation('reveal',index,result.visibleDie);if(!valid(token))return false;
+  displayedValues[index]=result.visibleDie;scene?.setValues(displayedValues);busy=false;render();enter($('decision-actions'));
+  announce(`${index?'Right':'Left'} die is ${result.visibleDie}. Choose Attack or Defense.`);return true;
 }
-async function resolveTurn(bot = false) {
-  if (busy || passing || match.isTerminal || match.phase !== E.Phase.CHOSEN || (!bot && isBotTurn())) return false;
-  const token = version;
-  busy = true; busyMessage = 'REVEALINGâ€¦'; render();
-  const event = match.revealSecond();
-  event.botReason = botReason || null;
-  await animation('reveal', 1 - event.firstDieIndex, event.hiddenDie);
-  if (!valid(token)) return false;
-  lastResult = event; displayedValues = publicValues(); scene?.setValues(displayedValues); busy = false;
-  log(`#${event.turn} P${event.player + 1} ${event.choice} Â· ${event.visibleDie}/${event.hiddenDie} â†’ ${event.value} Â· +${event.points}${event.kaputt ? ' KAPUTT' : ''}`);
-  render(); sfx(match.isTerminal ? 'win' : event.kaputt ? 'kaputt' : 'success');
-  if (match.isTerminal) { showPopup(match.winner === (setup.mode === 'human' ? event.player : 0) ? 'YOU WIN!' : 'GAME OVER', 'win'); }
-  else if (event.extreme && event.choice === 'attack') showPopup('EXTREME Â· 36', 'extreme');
-  else if (event.extreme && event.choice === 'defense') showPopup('EXTREME Â· 2', 'extreme');
-  else if (event.kaputt) showPopup('KAPUTT!', 'kaputt');
-  else if (event.points >= 20) showPopup(`+${event.points}`, 'success');
-  announce(`${event.kaputt ? 'Kaputt. No points.' : `${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal ? ` ${playerLabel(match.winner)} wins.` : ''}`);
-  if (match.isTerminal) uploadMatch();
-  if (setup.mode === 'remote' && remoteRoom) {
-    submitRemoteAction(event.choice, event.visibleDie, event.hiddenDie);
-  }
-  return true;
+async function chooseAction(choice,bot=false){
+  if(busy||passing||match.isTerminal||match.phase!=='first'||!bot&&isBotTurn())return false;
+  const token=version;match.choose(choice);sfx('reveal');render();bump($('turn-title'));announce(`${choice} locked in.`);
+  await sleep(reduced()?0:250);if(valid(token))await resolveTurn(bot);return true;
 }
-async function tapDie(index) {
-  if (!humanCanAct()) return;
-  if (match.phase === E.Phase.ROLLED) await revealFirst(index);
-  else if (match.phase === E.Phase.CHOSEN && index !== match.firstDieIndex) await resolveTurn();
+async function resolveTurn(bot=false){
+  if(busy||passing||match.isTerminal||match.phase!=='chosen'||!bot&&isBotTurn())return false;
+  const token=version;busy=true;busyMessage='REVEALING…';render();const event=match.revealSecond();event.botReason=botReason||null;
+  await animation('reveal',1-event.firstDieIndex,event.hiddenDie);if(!valid(token))return false;
+  lastResult=event;displayedValues=publicValues();scene?.setValues(displayedValues);busy=false;render();resultFeedback(event);
+  if(match.isTerminal)uploadMatch();return true;
 }
-function nextTurn() {
-  if (busy || match.phase !== E.Phase.RESOLVED || match.isTerminal) return;
-  if (setup.mode === 'remote') return;
-  match.nextTurn(); displayedValues = [null, null]; lastResult = null; botReason = '';
-  scene?.setValues(displayedValues);
-  if (setup.mode === 'human') {
-    passing = true;
-    $('pass-message').textContent = `${playerLabel(match.currentPlayer)}, youâ€™re up.`;
-    render(); $('pass-dialog').showModal();
-  } else { render(); if (isBotTurn()) runBot(version); }
+function nextTurn(){
+  if(busy||match.phase!=='resolved'||match.isTerminal)return;
+  match.nextTurn();displayedValues=[null,null];lastResult=null;botReason='';scene?.setValues(displayedValues);
+  if(setup.mode==='human'){passing=true;$('pass-message').textContent=`${playerLabel(match.currentPlayer)}, you’re up.`;render();showDialog('pass-dialog');}
+  else{render();if(isBotTurn())runBot(version);}
 }
-function stopAsyncWork() {
-  version++; scene?.cancel(); botCancel?.(); botCancel = null;
-  botWorker?.terminate(); botWorker = null;
-  busy = false; passing = false; botThinking = false;
-  $('dice-stage').classList.remove('rolling');
+function stopAsyncWork(){
+  version++;scene?.cancel();cancelMotion();botCancel?.();botCancel=null;botWorker?.terminate();botWorker=null;
+  busy=false;passing=false;botThinking=false;$('dice-stage').classList.remove('rolling');$('celebration').replaceChildren();
 }
-function startMatch(nextSetup = setup) {
-  stopAsyncWork();
-  setup = { ...nextSetup }; match = E.createMatch(setup);
-  displayedValues = [null, null]; lastResult = null; botReason = ''; uploaded = false; uploadStatus = '';
-  events = []; log('Match started.'); scene?.setValues(displayedValues);
-  document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
-  render(); announce('New match. Player 1 to roll.');
+function startMatch(nextSetup=setup){
+  stopAsyncWork();remote.detach();remoteRoom=null;setup={...nextSetup};match=E.createMatch(setup);matchId=randomId();
+  displayedValues=[null,null];lastResult=null;botReason='';uploaded=false;uploadStatus='';events=[];log('Match started.');scene?.setValues(displayedValues);
+  document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());render();enter($('game'));announce(`New match. ${playerLabel(0)} to roll.`);
 }
+
 function workerChoice(state, token) {
   return new Promise((resolve, reject) => {
     const worker = new Worker('bot-worker.js'); botWorker = worker;
@@ -299,284 +232,170 @@ async function runBot(token) {
   if (!valid(token)) return;
   botThinking = false; botReason = decision.why;
   chooseAction(decision.choice === 'attack' ? 'attack' : 'defense', true);
-  await sleep(650); if (!valid(token)) return;
-  await resolveTurn(true);
+
 }
-function payload() {
-  const data = match.exportMatch(), p = data.players;
-  return {
-    build: 'K3-E1-ARCADE', source: setup.mode === 'human' ? 'human-human' : 'human-bot', ruleset: 'K3-E1',
-    target: setup.target, kaputtLimit: setup.kaputtLimit, startingNtb: setup.startingNtb,
-    playerA: 'P1', playerB: setup.mode === 'human' ? 'P2' : playerLabel(1),
-    winner: data.winner === null ? null : `P${data.winner + 1}`, terminalCause: data.winReason,
-    turns: data.turns, scoreA: p[0].score, scoreB: p[1].score, kaputtA: p[0].kaputt, kaputtB: p[1].kaputt,
-    leadChanges: data.leadChanges, extremes: data.extremes, finalNtb: data.finalNtb,
-    setup: { opponent: setup.mode, winScore: setup.target, loseAtKaputt: setup.kaputtLimit, ...setup },
-    history: data.history.map(t => ({ ...t, actor: `P${t.player + 1}`, strategicHold: t.kaputt && t.ntbAfter === t.ntbBefore ? 1 : 0 })),
-  };
+function payload(){
+  if(online())return {id:remoteRoom.state?.matchId,build:'K3-E1-REMOTE-2',source:'remote-vs',roomCode:remoteRoom.code,...setup,...remoteRoom.state};
+  const data=match.exportMatch(),p=data.players;
+  return {id:matchId,build:'K3-E1-ARCADE',source:setup.mode==='human'?'human-human':'human-bot',ruleset:'K3-E1',target:setup.target,kaputtLimit:setup.kaputtLimit,startingNtb:setup.startingNtb,
+    playerA:playerLabel(0),playerB:playerLabel(1),playerAId:playerIdentity(),playerBId:setup.mode==='human'?`${playerIdentity()}-p2`:`bot-${setup.mode}`,winner:data.winner===null?null:`P${data.winner+1}`,terminalCause:data.winReason,turns:data.turns,
+    scoreA:p[0].score,scoreB:p[1].score,kaputtA:p[0].kaputt,kaputtB:p[1].kaputt,leadChanges:data.leadChanges,extremes:data.extremes,finalNtb:data.finalNtb,
+    setup:{...setup},history:data.history.map(t=>({...t,actor:`P${t.player+1}`,strategicHold:t.kaputt&&t.ntbAfter===t.ntbBefore?1:0}))};
 }
-async function uploadMatch() {
-  if (uploaded) return; uploaded = true;
-  // D1 is available on the Worker deployment; GitHub Pages/local games remain playable.
-  if (!location.hostname.endsWith('.workers.dev')) return;
-  const token = version; uploadStatus = 'Saving matchâ€¦'; renderLab();
-  try {
-    const response = await fetch('/api/matches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload()) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json(); if (!valid(token)) return;
-    uploadStatus = `Match saved: ${result.id}`;
-  } catch { if (!valid(token)) return; uploadStatus = 'Match could not be saved online. Export JSON to keep it.'; }
-  renderLab();
+function uploadMatch(){
+  if(uploaded||online())return;uploaded=true;
+  if(!queueMatch(payload()))uploadStatus='Device storage is full. Export this match to keep a copy.';
+  else retryUploads();
 }
-function showDialog(id) {
-  document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
-  if (id === 'lab-dialog') renderLab();
-  $(id).showModal();
+function retryUploads(){return flushMatches(message=>{uploadStatus=message;if($('lab-dialog').open)renderLab();});}
+function showDialog(id){
+  document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
+  if(id==='lab-dialog')renderLab();$(id).showModal();enter($(id));
 }
-let modelRequest = 0;
-async function refreshModels() {
-  const request = ++modelRequest, provider = $('llmprovider').value;
-  if (!provider) return;
-  $('llmmodel').replaceChildren(new Option('Loading modelsâ€¦', ''));
-  $('llmkey').value = '';
-  $('llmstatus').textContent = LLM.getApiKey(provider) ? 'Key saved in this browser.' : 'No key saved for this provider.';
-  const models = await LLM.listModels(provider);
-  if (request !== modelRequest) return;
-  $('llmmodel').replaceChildren(...models.map(model => new Option(model, model)));
-  const saved = LLM.getModel(provider);
-  if (models.includes(saved)) $('llmmodel').value = saved;
-  if ($('llmmodel').value) LLM.setModel(provider, $('llmmodel').value);
+function exportJson(data,name='kaputt-k3e1-vs.json'){
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function populateLLM() {
-  if (!$('llmprovider').options.length) {
-    for (const [id, provider] of Object.entries(LLM.PROVIDERS)) $('llmprovider').add(new Option(provider.name, id));
-    const saved = Object.keys(LLM.PROVIDERS).find(id => LLM.getApiKey(id));
-    if (saved) $('llmprovider').value = saved;
+function remoteModel(room){
+  const state=room.state||{phase:'idle',currentPlayer:0,turn:0,ntb:room.startingNtb,players:[{name:room.hostName,score:0,kaputt:0},{name:room.guestName||'Friend',score:0,kaputt:0}],winner:null,history:[],extremes:0,leadChanges:0,choice:null,firstDieIndex:null,visibleDie:null};
+  return {...state,turnNumber:state.turn,isTerminal:state.winner!==null,getPublicState:()=>state};
+}
+async function receiveRoom(room,changed){
+  const previous=remoteRoom,newSession=!online()||previous?.code!==room.code;
+  remoteRoom=room;
+  if(newSession){stopAsyncWork();events=[];botReason='';announce('Online room connected.');}
+  setup={mode:'remote',target:room.target,kaputtLimit:room.kaputtLimit,startingNtb:room.startingNtb,playerName:room.hostName,player2Name:room.guestName||'Friend'};
+  match=remoteModel(room);lastResult=room.state?.lastResult||null;
+  if(!changed){renderConnection();return;}
+  const token=++version;scene?.cancel();busy=false;
+  if(newSession&&room.status==='waiting')showDialog('lobby-dialog');
+  else if(newSession||previous?.status==='waiting'&&room.status==='playing'){
+    document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());enter($('game'));
   }
-  $('llmtemp').value = LLM.getTemperature(); refreshModels();
-}
-$('die-left').addEventListener('click', () => tapDie(0));
-$('die-right').addEventListener('click', () => tapDie(1));
-$('attack').addEventListener('click', () => chooseAction('attack'));
-$('defense').addEventListener('click', () => chooseAction('defense'));
-$('primary-action').addEventListener('click', () => {
-  if (busy || passing) return;
-  if (match.isTerminal) return startMatch();
-  if (match.phase === E.Phase.IDLE) rollTurn();
-  else if (match.phase === E.Phase.CHOSEN) resolveTurn();
-  else if (match.phase === E.Phase.RESOLVED) nextTurn();
-});
-$('ready').addEventListener('click', () => { passing = false; $('pass-dialog').close(); render(); });
-$('pass-dialog').addEventListener('cancel', event => event.preventDefault());
-$('open-menu').addEventListener('click', () => showDialog('menu-dialog'));
-$('open-setup').addEventListener('click', () => showDialog('setup-dialog'));
-$('open-rules').addEventListener('click', () => showDialog('rules-dialog'));
-$('open-lab').addEventListener('click', () => showDialog('lab-dialog'));
-for (const button of document.querySelectorAll('[data-close]')) button.addEventListener('click', () => $(button.dataset.close).close());
-$('toggle-sound').addEventListener('click', () => { sound = !sound; try { localStorage.setItem('kaputt-sound', sound ? 'on' : 'off'); } catch {} render(); });
-$('mode').addEventListener('change', () => {
-  const mode = $('mode').value;
-  const isHuman = mode === 'human';
-  const isLLM = mode.startsWith('llm_');
-  const isRemote = mode === 'remote';
-  $('llmsettings').hidden = !isLLM; if (isLLM) populateLLM();
-  const p2 = $('p2-name-label'); if (p2) p2.hidden = !isHuman;
-  const rs = $('remote-settings'); if (rs) rs.hidden = !isRemote;
-});
-$('setup-form').addEventListener('submit', event => {
-  event.preventDefault();
-  if (!$('setup-form').reportValidity()) return;
-  startMatch({ mode: $('mode').value, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value, playerName: ($('player-name')?.value || 'You').trim() || 'You', player2Name: ($('player2-name')?.value || 'Player 2').trim() || 'Player 2' });
-});
-$('llmprovider').addEventListener('change', refreshModels);
-$('llmmodel').addEventListener('change', () => LLM.setModel($('llmprovider').value, $('llmmodel').value));
-
-let remotePolling = null, remoteRoom = null, remotePlayerIndex = null, remoteLastTurn = -1;
-
-if ($('create-room')) {
-  $('create-room').addEventListener('click', async () => {
-    const name = ($('player-name')?.value || 'Host').trim();
-    $('room-status').textContent = 'Creating room...';
-    try {
-      const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID }, body: JSON.stringify({ hostName: name, target: +$('target').value, kaputtLimit: +$('klimit').value, startingNtb: +$('starting-ntb').value }) });
-      const d = await r.json();
-      if (d.ok) {
-        remotePlayerIndex = 0;
-        remoteLastTurn = -1;
-        setup.mode = 'remote';
-        remoteRoom = { code: d.code, host_name: name, status: 'waiting', target: +$('target').value, kaputt_limit: +$('klimit').value, starting_ntb: +$('starting-ntb').value };
-        $('room-status').textContent = `Room code: ${d.code} \u2014 share this with your opponent. Waiting for them to join...`;
-        $('room-status').dataset.code = d.code;
-        startRoomPolling(d.code);
-      } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed');
-    } catch (e) { $('room-status').textContent = 'Network error.'; }
-  });
-}
-if ($('join-room-btn')) {
-  $('join-room-btn').addEventListener('click', () => {
-    const jl = $('join-code-label'); if (jl) jl.hidden = !jl.hidden;
-    $('room-status').textContent = 'Enter the 4-character room code.';
-  });
-}
-if ($('join-code')) {
-  $('join-code').addEventListener('input', async () => {
-    const code = $('join-code').value.toUpperCase().trim();
-    if (code.length !== 4) return;
-    const name = ($('player-name')?.value || 'Guest').trim();
-    $('room-status').textContent = 'Joining...';
-    try {
-      const r = await fetch(`/api/rooms/${code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID }, body: JSON.stringify({ guestName: name }) });
-      const d = await r.json();
-      if (d.ok) {
-        remotePlayerIndex = d.playerIndex ?? 1;
-        remoteLastTurn = -1;
-        setup.mode = 'remote';
-        remoteRoom = { code, host_name: d.room?.host_name, guest_name: d.room?.guest_name, status: d.room?.status, current_state_json: d.room?.current_state_json, target: d.room?.target, kaputt_limit: d.room?.kaputt_limit, starting_ntb: d.room?.starting_ntb };
-        if (d.room?.current_state_json) {
-          const state = JSON.parse(d.room.current_state_json);
-          remoteLastTurn = state.turn ?? 0;
-          document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
-          syncRemoteState(state, remoteRoom);
-        }
-        $('room-status').textContent = `Joined room ${code}! Match starting...`;
-        startRoomPolling(code);
-      } else $('room-status').textContent = 'Error: ' + (d.error || 'Failed to join');
-    } catch (e) { $('room-status').textContent = 'Network error.'; }
-  });
-}
-
-function startRoomPolling(code) {
-  if (remotePolling) clearInterval(remotePolling);
-  remotePolling = setInterval(() => pollRoomState(code), 1500);
-  pollRoomState(code);
-}
-
-async function pollRoomState(code) {
-  try {
-    const r = await fetch(`/api/rooms/${code}`);
-    const d = await r.json();
-    if (!d.ok) return;
-    const room = d.room;
-    remoteRoom = room;
-    if (room.status === 'waiting') {
-      $('room-status').textContent = `Room ${code} \u2014 waiting for opponent to join...`;
-      return;
-    }
-    const state = JSON.parse(room.current_state_json || '{}');
-    if ((room.status === 'playing' || room.status === 'finished') && (state.turn ?? 0) > remoteLastTurn) {
-      remoteLastTurn = state.turn ?? 0;
-      document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
-      syncRemoteState(state, room);
-    }
-    if (room.status === 'finished') {
-      clearInterval(remotePolling); remotePolling = null;
-    }
-  } catch {}
-}
-
-function syncRemoteState(state, room) {
-  const myIdx = remotePlayerIndex;
-  const isMyTurn = state.currentPlayer === myIdx && state.phase === 'playing';
-  const oppIdx = 1 - myIdx;
-  const myName = state.players[myIdx]?.name || 'You';
-  const oppName = state.players[oppIdx]?.name || 'Opponent';
-
-  $('opponent-name').textContent = oppName.toUpperCase();
-  $('self-name').textContent = state.phase === 'finished'
-    ? (state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER')
-    : isMyTurn ? `${myName} \u00B7 YOUR TURN` : `${myName} \u2014 waiting`;
-  $('opponent-score').textContent = state.players[oppIdx]?.score || 0;
-  $('self-score').textContent = state.players[myIdx]?.score || 0;
-  $('opponent-kaputts').textContent = `${state.players[oppIdx]?.kaputt || 0}/${state.kaputtLimit}`;
-  $('self-kaputts').textContent = `${state.players[myIdx]?.kaputt || 0}/${state.kaputtLimit}`;
-  $('ntb').textContent = state.ntb;
-  $('target-label').textContent = state.target;
-
-  if (state.lastResult) {
-    const lr = state.lastResult;
-    displayedValues = [lr.visibleDie, lr.hiddenDie];
-    scene?.setValues(displayedValues);
-    $('turn-title').textContent = lr.kaputt ? 'KAPUTT!' : lr.extreme ? `EXTREME! +${lr.points}` : `+${lr.points} POINTS`;
-    $('turn-detail').textContent = lr.kaputt ? 'No points. The target holds.' : `${lr.action === 'attack' ? 'Attack' : 'Defense'} pays off.`;
-    if (lr.kaputt) showPopup('KAPUTT!', 'kaputt');
-    else if (lr.extreme) showPopup(`EXTREME \u00B7 ${lr.value}`, 'extreme');
-    else if (lr.points >= 20) showPopup(`+${lr.points}`, 'success');
+  if(newSession)events=(room.state?.history||[]).slice().reverse().map(e=>`#${e.turn} ${room.state.players[e.player].name} ${e.choice} · +${e.points}${e.kaputt?' KAPUTT':''}`);
+  $('log').textContent=events.join('\n')||'Online room created.';
+  const state=room.state,phase=state?.phase,previousPhase=previous?.state?.phase;
+  const sameMatch=previous?.state?.matchId===state?.matchId;
+  const shouldAnimate=!newSession&&sameMatch&&phase!==previousPhase&&['rolled','first','resolved'].includes(phase);
+  if(shouldAnimate){
+    busy=true;busyMessage=phase==='rolled'?'ROLLING…':'REVEALING…';render();
+    if(phase==='rolled'){$('dice-stage').classList.add('rolling');displayedValues=[null,null];sfx('roll');await animation('roll');}
+    else if(phase==='first')await animation('reveal',state.firstDieIndex,state.visibleDie);
+    else if(lastResult)await animation('reveal',1-state.firstDieIndex,state.values[1-state.firstDieIndex]);
+    if(!valid(token))return;
   }
-
-  if (state.phase === 'finished') {
-    $('turn-title').textContent = state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER';
-    $('turn-detail').textContent = state.lastResult?.winReason || '';
-    showPopup(state.winner === myIdx ? 'YOU WIN!' : 'GAME OVER', state.winner === myIdx ? 'win' : 'lose');
-    $('primary-action').hidden = false;
-    $('primary-label').textContent = 'PLAY AGAIN';
-    $('primary-action').disabled = false;
-    $('decision-actions').hidden = true;
-    return;
-  }
-
-  if (isMyTurn) {
-    if ([E.Phase.IDLE, E.Phase.RESOLVED].includes(match.phase)) {
-      match = E.createMatch({ target: state.target, kaputtLimit: state.kaputtLimit, startingNtb: state.ntb });
-    }
-    $('turn-title').textContent = match.phase === E.Phase.IDLE ? 'YOUR TURN' : $('turn-title').textContent;
-    $('turn-detail').textContent = match.phase === E.Phase.IDLE ? 'Roll, reveal a die, choose Attack or Defense.' : $('turn-detail').textContent;
-    $('primary-action').hidden = match.phase !== E.Phase.IDLE;
-    $('primary-label').textContent = 'ROLL THE DICE';
-    $('primary-action').disabled = match.phase !== E.Phase.IDLE;
-  } else {
-    $('turn-title').textContent = 'OPPONENT\u2019S TURN';
-    $('turn-detail').textContent = `${oppName} is playing...`;
-    $('primary-action').hidden = true;
-    $('decision-actions').hidden = true;
-  }
+  $('dice-stage').classList.remove('rolling');displayedValues=publicValues();scene?.setValues(displayedValues);busy=false;render();
+  if(phase==='first'&&match.currentPlayer===me())enter($('decision-actions'));
+  if(phase==='resolved'&&lastResult&&sameMatch&&previous?.state?.turn<state.turn)resultFeedback(lastResult);
+  if(phase==='idle'&&previousPhase!=='idle')announce(`${playerLabel(match.currentPlayer)} to roll.`);
+  if($('lab-dialog').open)renderLab();
 }
-
-async function submitRemoteAction(action, visibleDie, hiddenDie) {
-  if (!remoteRoom || remotePlayerIndex === null) return;
-  const code = remoteRoom.code;
-  try {
-    const r = await fetch(`/api/rooms/${code}/action`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Player-UUID': PLAYER_UUID },
-      body: JSON.stringify({ playerIndex: remotePlayerIndex, action, visibleDie, hiddenDie })
-    });
-    const d = await r.json();
-    if (d.ok && d.state) {
-      remoteRoom.current_state_json = JSON.stringify(d.state);
-      remoteLastTurn = d.state.turn ?? remoteLastTurn;
-      syncRemoteState(d.state, remoteRoom);
-    } else {
-      log('Action error: ' + (d.error || 'Unknown'));
+const remote=new RemoteClient({onState:(room,changed)=>{receiveRoom(room,changed).catch(()=>announce('Screen refreshed. Please retry your move.'));},onConnection:status=>{connection={...connection,...status};if(online())render();}});
+async function remoteCommand(action,details={}){
+  try{
+    const room=await remote.send(action,details);
+    if(action==='choose'&&room?.state?.phase==='chosen'){
+      const token=version;await sleep(reduced()?0:250);
+      if(valid(token)&&online()&&match.phase==='chosen'&&match.currentPlayer===me())await remote.send('resolve');
     }
-  } catch (e) { log('Network error submitting action.'); }
+  }catch(error){announce(error.message);}
 }
-$('llmtemp').addEventListener('change', () => { if ($('llmtemp').checkValidity()) LLM.setTemperature(+$('llmtemp').value); });
-$('llmsave').addEventListener('click', async () => {
-  const key = $('llmkey').value.trim(); if (!key) return;
-  LLM.setApiKey($('llmprovider').value, key); $('llmkey').value = ''; await refreshModels();
+function settings(){return {mode:$('mode').value,target:+$('target').value,kaputtLimit:+$('klimit').value,startingNtb:+$('starting-ntb').value,playerName:$('player-name').value.trim()||'You',player2Name:$('player2-name').value.trim()||'Player 2'};}
+function modeChanged(){
+  const mode=$('mode').value,isLLM=mode.startsWith('llm_');
+  $('p2-name-label').hidden=mode!=='human';$('llmsettings').hidden=!isLLM;if(isLLM)populateLLM();
+  $('remote-settings').hidden=mode!=='remote';$('start-local').hidden=mode==='remote';$('setup-note').hidden=mode==='remote';
+  $('resume-room').hidden=!remote.saved;
+}
+async function roomEntry(kind){
+  if(roomBusy||remote.active)return;
+  if(kind==='create'&&!$('setup-form').reportValidity())return;
+  roomBusy=true;for(const id of ['create-room','join-room-btn','resume-room'])$(id).disabled=true;
+  $('room-status').textContent=kind==='create'?'Creating your room…':'Joining your friend…';$('export-legacy').hidden=true;
+  try{
+    const s=settings();
+    if(kind==='create')await remote.create({hostName:s.playerName,target:s.target,kaputtLimit:s.kaputtLimit,startingNtb:s.startingNtb});
+    else await remote.join($('join-code').value.trim().toUpperCase(),s.playerName);
+    $('room-status').textContent='';
+  }catch(error){$('room-status').textContent=error.message;$('export-legacy').hidden=error.status!==426;if(!error.status)$('online-link').hidden=false;}
+  finally{roomBusy=false;for(const id of ['create-room','join-room-btn','resume-room'])$(id).disabled=false;}
+}
+function newMatch(){
+  if(remote.active&&!connection.fatal&&remoteRoom?.status!=='closed'){showDialog('leave-dialog');return;}
+  if(remote.active){remote.detach();remoteRoom=null;setup.mode='human';match=E.createMatch(setup);displayedValues=[null,null];scene?.setValues(displayedValues);render();}
+  showDialog('setup-dialog');modeChanged();
+}
+let modelRequest=0;
+async function refreshModels(){
+  const request=++modelRequest,provider=$('llmprovider').value;if(!provider)return;
+  $('llmmodel').replaceChildren(new Option('Loading models…',''));$('llmkey').value='';
+  $('llmstatus').textContent=LLM.getApiKey(provider)?'Key saved in this browser.':'No key saved for this provider.';
+  try{
+    const models=await LLM.listModels(provider);if(request!==modelRequest)return;
+    $('llmmodel').replaceChildren(...models.map(model=>new Option(model,model)));const saved=LLM.getModel(provider);
+    if(models.includes(saved))$('llmmodel').value=saved;if($('llmmodel').value)LLM.setModel(provider,$('llmmodel').value);
+  }catch{$('llmstatus').textContent='Could not list models. Check your provider and key, then retry.';}
+}
+function populateLLM(){
+  if(!$('llmprovider').options.length){for(const [id,provider]of Object.entries(LLM.PROVIDERS))$('llmprovider').add(new Option(provider.name,id));const saved=Object.keys(LLM.PROVIDERS).find(id=>LLM.getApiKey(id));if(saved)$('llmprovider').value=saved;}
+  $('llmtemp').value=LLM.getTemperature();refreshModels();
+}
+for(const [id,index]of [['die-left',0],['die-right',1]])$(id).addEventListener('click',()=>{
+  if(!humanCanAct())return;
+  if(online())return remoteCommand(match.phase==='rolled'?'reveal':'resolve',match.phase==='rolled'?{dieIndex:index}:{});
+  if(match.phase==='rolled')revealFirst(index);else if(match.phase==='chosen'&&index!==match.firstDieIndex)resolveTurn();
 });
-$('llmclear').addEventListener('click', () => { LLM.clearAllKeys(); $('llmkey').value = ''; refreshModels(); });
-$('export').addEventListener('click', () => {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(payload(), null, 2)], { type: 'application/json' }));
-  const link = document.createElement('a'); link.href = url; link.download = 'kaputt-k3e1-vs.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+for(const choice of ['attack','defense'])$(choice).addEventListener('click',()=>{if(humanCanAct())online()?remoteCommand('choose',{choice}):chooseAction(choice);});
+$('primary-action').addEventListener('click',()=>{
+  if(busy||passing)return;
+  if(online()){
+    if(connection.fatal)return newMatch();
+    if(remoteRoom?.status==='waiting')return showDialog('lobby-dialog');
+    if(remoteRoom?.status==='closed')return newMatch();
+    if(match.isTerminal)return remoteCommand('rematch',{matchId:remoteRoom.state.matchId});
+    if(!humanCanAct())return;
+    return remoteCommand({idle:'roll',chosen:'resolve',resolved:'next'}[match.phase]);
+  }
+  if(match.isTerminal)return startMatch();
+  if(match.phase==='idle')rollTurn();else if(match.phase==='chosen')resolveTurn();else if(match.phase==='resolved')nextTurn();
 });
-$('dice-renderer').addEventListener('dice-renderer-lost', () => {
-  scene?.dispose(); scene = null; $('dice-stage').classList.remove('has-webgl');
-  announce('3D rendering is unavailable. Dice values remain accessible.');
+$('ready').addEventListener('click',()=>{passing=false;$('pass-dialog').close();render();});
+$('pass-dialog').addEventListener('cancel',event=>event.preventDefault());
+for(const [button,dialog]of [['open-menu','menu-dialog'],['open-rules','rules-dialog'],['open-lab','lab-dialog'],['open-room','lobby-dialog']])$(button).addEventListener('click',()=>showDialog(dialog));
+$('open-setup').addEventListener('click',newMatch);
+for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
+$('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
+$('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
+$('mode').addEventListener('change',modeChanged);
+$('setup-form').addEventListener('submit',event=>{event.preventDefault();if($('mode').value==='remote')return roomEntry('join');if($('setup-form').reportValidity())startMatch(settings());});
+$('create-room').addEventListener('click',()=>roomEntry('create'));$('join-room-btn').addEventListener('click',()=>roomEntry('join'));
+$('join-code').addEventListener('input',()=>{$('join-code').value=$('join-code').value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
+$('resume-room').addEventListener('click',()=>{remote.resume(remote.saved);$('room-status').textContent='Resuming your room…';});
+$('retry-connection').addEventListener('click',()=>remote.retry().catch(error=>announce(error.message)));
+$('copy-room').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(remoteRoom.code);$('lobby-status').textContent='Room code copied.';}catch{$('lobby-status').textContent=`Share this code: ${remoteRoom.code}`;}});
+$('share-room').addEventListener('click',async()=>{
+  const url=new URL(location.href);url.pathname='/';url.search=`?room=${remoteRoom.code}`;url.hash='';
+  try{if(navigator.share)await navigator.share({title:'Play KAPUTT with me',text:`Join my KAPUTT room: ${remoteRoom.code}`,url:url.href});else{await navigator.clipboard.writeText(url.href);$('lobby-status').textContent='Invite link copied.';}}catch(error){if(error.name!=='AbortError')$('lobby-status').textContent=`Share room code ${remoteRoom.code}.`;}
 });
-// Importing/rendering failure must not stop the rules, keyboard controls, or game.
-displayedValues = publicValues(); render();
-try {
-  const { DiceScene } = await import('./dice-scene.js');
-  scene = new DiceScene($('dice-renderer'));
-  const canvas = scene.renderer.domElement;
-  const shell = $('game');
-  shell.prepend(canvas);
-  scene.container = shell;
-  scene.resize();
-  new ResizeObserver(() => scene.resize()).observe(shell);
-  $('dice-stage').classList.add('has-webgl');
-  displayedValues = publicValues(); scene.setValues(displayedValues); render();
-} catch (error) { console.warn('3D dice unavailable; accessible dice enabled.', error.message); }
-showDialog('setup-dialog');
-
-// deploy-tick: 2026-09-20T15:37:34.9450012+02:00
+$('leave-room').addEventListener('click',()=>showDialog('leave-dialog'));
+$('confirm-leave').addEventListener('click',async()=>{
+  $('confirm-leave').disabled=true;$('leave-status').textContent='Leaving…';
+  try{const room=await remote.send('leave');if(!room)throw new Error('Wait for the pending move, then retry.');startMatch({...setup,mode:'human'});showDialog('setup-dialog');modeChanged();$('leave-status').textContent='';}
+  catch(error){$('leave-status').textContent=error.message;}finally{$('confirm-leave').disabled=false;}
+});
+$('export-legacy').addEventListener('click',async()=>{
+  try{const result=await remote.request(`/api/rooms/${$('join-code').value.toUpperCase()}/archive`);exportJson(result.archive,'kaputt-previous-room.json');}catch(error){$('room-status').textContent=error.message;}
+});
+$('llmprovider').addEventListener('change',refreshModels);$('llmmodel').addEventListener('change',()=>LLM.setModel($('llmprovider').value,$('llmmodel').value));
+$('llmtemp').addEventListener('change',()=>{if($('llmtemp').checkValidity())LLM.setTemperature(+$('llmtemp').value);});
+$('llmsave').addEventListener('click',async()=>{const key=$('llmkey').value.trim();if(!key)return;LLM.setApiKey($('llmprovider').value,key);$('llmkey').value='';await refreshModels();});
+$('llmclear').addEventListener('click',()=>{LLM.clearAllKeys();$('llmkey').value='';refreshModels();});
+$('export').addEventListener('click',()=>exportJson(payload()));$('retry-upload').addEventListener('click',retryUploads);addEventListener('online',retryUploads);
+$('dice-renderer').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null;$('dice-stage').classList.remove('has-webgl');announce('3D rendering is unavailable. Dice values remain accessible.');});
+// Setup renders immediately; optional 3D loading never blocks starting a game.
+displayedValues=publicValues();render();modeChanged();
+const invite=new URLSearchParams(location.search).get('room');
+if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
+if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();}else showDialog('setup-dialog');
+retryUploads();
+import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));

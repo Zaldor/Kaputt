@@ -4,6 +4,8 @@ import { resolve, extname, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 const { values } = parseArgs({ options: { host: { type: 'string', default: '0.0.0.0' }, port: { type: 'string', default: '4173' }, strictPort: { type: 'boolean' } } });
 const root = resolve('lab');
+const {createLocalRuntime}=await import('./local-runtime.mjs');
+const {mf}=await createLocalRuntime();
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.json': 'application/json; charset=utf-8' };
 const fixture = `<script>
 // This fixture is served only by the local development server, never in lab/.
@@ -22,6 +24,11 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://dev.local');
     res.setHeader('Cache-Control', 'no-store');
+    if(url.pathname.startsWith('/api/')) {
+      const chunks=[];for await(const chunk of req)chunks.push(chunk);
+      const response=await mf.dispatchFetch('http://local.test'+req.url,{method:req.method,headers:req.headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})});
+      res.writeHead(response.status,Object.fromEntries(response.headers));return res.end(Buffer.from(await response.arrayBuffer()));
+    }
     if (url.pathname === '/__preview') {
       const width = Math.min(1000, Math.max(280, Number(url.searchParams.get('width')) || 390));
       const height = Math.min(1400, Math.max(480, Number(url.searchParams.get('height')) || 844));
@@ -32,7 +39,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/__visual') {
       const html = await readFile(resolve(root, 'index.html'), 'utf8');
       res.setHeader('Content-Type', mime['.html']);
-      return res.end(html.replace('<script src="engine.js"></script>', '<script src="engine.js"></script>' + fixture));
+      return res.end(html.replace(/(<script src="engine.js">\s*<\/script>)/, '$1' + fixture));
     }
     const path = resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
     if (!path.startsWith(root + sep)) { res.writeHead(403); return res.end('Forbidden'); }
@@ -42,3 +49,5 @@ const server = http.createServer(async (req, res) => {
   } catch { res.writeHead(404); res.end('Not found'); }
 });
 server.listen(Number(values.port), values.host, () => console.log(`KAPUTT preview listening on ${values.host}:${values.port}`));
+
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{server.close();await mf.dispose();process.exit(0);});

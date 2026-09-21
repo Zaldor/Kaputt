@@ -19,7 +19,7 @@ const positions = {
   6: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 0], [1, 1]],
 };
 const front = new THREE.Vector3(0, 0, 1);
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = () => document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class DiceScene {
   constructor(container) {
@@ -155,7 +155,7 @@ export class DiceScene {
       this.dice.forEach((die, i) => {
         const spin = new THREE.Quaternion().setFromEuler(new THREE.Euler((1 - eased) * Math.PI * (4 + i * 2), (1 - eased) * Math.PI * (6 - i * 2), (1 - eased) * Math.PI * (i ? -2 : 2)));
         die.group.quaternion.copy(this.pose(i, null)).multiply(spin);
-        die.group.position.y = Math.sin(t * Math.PI) * .35 + Math.abs(Math.sin(t * Math.PI * 3)) * .10 * (1 - t);
+        die.group.position.y = Math.sin(t * Math.PI) * .16 + Math.abs(Math.sin(t * Math.PI * 3)) * .10 * (1 - t);
         die.group.scale.setScalar(1 - .08 * Math.sin(t * Math.PI));
       });
     }, () => this.setValues([null, null]));
@@ -166,8 +166,8 @@ export class DiceScene {
     return this.animate(400, t => {
       if (t >= .45 && !switched) { this.setValues(values); switched = true; }
       const lift = Math.sin(t * Math.PI);
-      die.group.position.y = lift * .45;
-      die.group.scale.setScalar(1 + lift * .12);
+      die.group.position.y = lift * .14;
+      die.group.scale.setScalar(1 + lift * .025);
     }, () => this.setValues(values));
   }
   finish() {
