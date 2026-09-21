@@ -5,9 +5,13 @@
 <body>  <main class="game-shell" id="game" aria-label="KAPUTT game">    <header class="game-header">      <h1>
 <img src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
 </h1>      <span class="win-target">FIRST TO <b id="target-label">100</b>
-</span>      <button class="menu-button" id="open-menu" aria-label="Open game menu" aria-haspopup="dialog">
+</span>      <div class="header-icons">      <button class="menu-button" id="open-profile" aria-label="Your profile">
+<img src="assets/icons/users-bold.svg" alt="">
+</button>      <a class="menu-button" href="leaderboard.html" aria-label="Leaderboard">
+<img src="assets/icons/trophy-fill.svg" alt="">
+</a>      <button class="menu-button" id="open-menu" aria-label="Open game menu" aria-haspopup="dialog">
 <img src="assets/icons/list-bold.svg" alt="">
-</button>    </header>    <section class="scoreboard opponent" aria-label="Opponent score">      <div class="score-section">
+</button>      </div>    </header>    <section class="scoreboard opponent" aria-label="Opponent score">      <div class="score-section">
 <h2 id="opponent-name">PLAYER 2</h2>
 <div class="score">
 <strong id="opponent-score">0</strong>
@@ -89,7 +93,7 @@
 <button class="icon-button" data-close="setup-dialog" aria-label="Close new match">
 <img src="assets/icons/x-bold.svg" alt="">
 </button>
-</div>    <form id="setup-form">      <label>Your name<input id="player-name" name="playerName" type="text" maxlength="16" value="You" placeholder="Your name">
+</div>    <form id="setup-form">      <label>Your name<input id="player-name" name="playerName" type="text" maxlength="16" placeholder="Your name">
 </label>
 <label id="p2-name-label">Player 2 name<input id="player2-name" name="player2Name" type="text" maxlength="16" value="Player 2" placeholder="Player 2 name">
 </label>
@@ -190,6 +194,13 @@
 <button class="text-button" id="leave-room">Leave room</button>
 </dialog>
 <dialog id="leave-dialog" class="sheet pass-sheet"><h2>LEAVE THIS ROOM?</h2><p>Your opponent will see that you left. Recorded turns stay saved.</p><p class="sheet-note" id="leave-status" role="status"></p><button class="game-button sheet-primary" id="confirm-leave">LEAVE ROOM</button><button class="text-button" data-close="leave-dialog">Keep playing</button></dialog>
+<dialog id="profile-dialog" class="sheet">
+<div class="sheet-heading"><h2>YOUR PROFILE</h2><button class="icon-button" data-close="profile-dialog" aria-label="Close profile"><img src="assets/icons/x-bold.svg" alt=""></button></div>
+<label>Your display name<input id="profile-name" type="text" maxlength="16" placeholder="Enter your name"></label>
+<p class="sheet-note">This name appears on the leaderboard and in online matches. Stored in this browser only.</p>
+<button type="button" class="small-button full-width" id="save-profile">Save name</button>
+<p id="profile-status" class="sheet-note" role="status"></p>
+</dialog>
 <script src="engine.js">
 </script>  <script src="bots.js">
 </script>  <script src="llm.js">

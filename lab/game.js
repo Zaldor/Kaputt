@@ -2,7 +2,12 @@ import {RemoteClient, randomId, playerIdentity} from './remote-client.js';
 import {animate, enter, bump, shake, number, celebrate, cancelMotion, reduced, toggleMotion, motionEnabled} from './motion.js';
 import {queueMatch, flushMatches, pendingMatches} from './match-outbox.js';
 const $=id=>document.getElementById(id), E=window.KaputtEngine, LLM=window.KaputtLLM;
-let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:'You',player2Name:'Player 2'};
+const ADJ=['Swift','Bold','Keen','Sharp','Wild','Calm','Brave','Dark','Iron','Silent','Lucky','Crimson','Golden','Phantom','Fierce'];
+const NOUN=['Fox','Wolf','Hawk','Bear','Lynx','Raven','Viper','Tiger','Eagle','Cobra','Falcon','Panther','Shark','Dragon','Phoenix'];
+function generateName(){return ADJ[Math.floor(Math.random()*ADJ.length)]+NOUN[Math.floor(Math.random()*NOUN.length)]}
+function getPlayerName(){let n;try{n=localStorage.getItem('kaputt-player-name')}catch{};if(!n||n==='You'){n=generateName();try{localStorage.setItem('kaputt-player-name',n)}catch{}};return n}
+function setPlayerName(n){try{localStorage.setItem('kaputt-player-name',n)}catch{}}
+let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:getPlayerName(),player2Name:'Player 2'};
 let match=E.createMatch(setup), matchId=randomId();
 let version=0,busy=false,passing=false,botThinking=false,busyMessage='';
 let scene=null,botWorker=null,botCancel=null,botReason='',displayedValues=[null,null],lastResult=null;
@@ -323,6 +328,7 @@ async function roomEntry(kind){
 function newMatch(){
   if(remote.active&&!connection.fatal&&remoteRoom?.status!=='closed'){showDialog('leave-dialog');return;}
   if(remote.active){remote.detach();remoteRoom=null;setup.mode='human';match=E.createMatch(setup);displayedValues=[null,null];scene?.setValues(displayedValues);render();}
+  $('player-name').value=getPlayerName();
   showDialog('setup-dialog');modeChanged();
 }
 let modelRequest=0;
@@ -363,6 +369,8 @@ $('ready').addEventListener('click',()=>{passing=false;$('pass-dialog').close();
 $('pass-dialog').addEventListener('cancel',event=>event.preventDefault());
 for(const [button,dialog]of [['open-menu','menu-dialog'],['open-rules','rules-dialog'],['open-lab','lab-dialog'],['open-room','lobby-dialog']])$(button).addEventListener('click',()=>showDialog(dialog));
 $('open-setup').addEventListener('click',newMatch);
+$('open-profile').addEventListener('click',()=>{$('profile-name').value=getPlayerName();showDialog('profile-dialog')});
+$('save-profile').addEventListener('click',()=>{const name=$('profile-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('profile-status').textContent='Name saved as '+name;});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
 $('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
 $('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
