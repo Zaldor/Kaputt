@@ -406,4 +406,4 @@ const invite=new URLSearchParams(location.search).get('room');
 if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
 if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();}else showDialog('setup-dialog');
 retryUploads();
-import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));
+import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));const canvas=scene.renderer.domElement;const shell=$('game');shell.prepend(canvas);scene.container=shell;scene.resize();new ResizeObserver(()=>scene.resize()).observe(shell);$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));
