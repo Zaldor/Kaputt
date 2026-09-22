@@ -6,7 +6,7 @@
 <img src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
 </h1>      <div class="header-icons">      <button class="menu-button" id="open-profile" aria-label="Your profile">
 <img src="assets/icons/users-bold.svg" alt="">
-</button>      <a class="menu-button" href="leaderboard.html" aria-label="Leaderboard">
+</button>      <button class="menu-button" id="open-leaderboard" aria-label="Leaderboard">
 <img src="assets/icons/trophy-fill.svg" alt="">
 </a>      <button class="menu-button" id="open-menu" aria-label="Open game menu" aria-haspopup="dialog">
 <img src="assets/icons/list-bold.svg" alt="">
@@ -84,9 +84,9 @@
 </button>    <a class="sheet-link" href="sim.html">
 <img src="assets/icons/chart-bar-bold.svg" alt="">Simulation lab<span>→</span>
 </a>
-<a class="sheet-link" href="leaderboard.html">
+    <button class="sheet-link" id="open-leaderboard-menu">
 <img src="assets/icons/chart-bar-bold.svg" alt="">Leaderboard<span>→</span>
-</a>    <button class="sheet-link" id="export">
+</button>    <button class="sheet-link" id="export">
 <img src="assets/icons/download-simple-bold.svg" alt="">Export match JSON</button>    <p class="sheet-note">K3-E1 · Extremes ruleset</p>  </dialog>  <dialog id="setup-dialog" class="sheet">    <div class="sheet-heading">
 <h2>NEW MATCH</h2>
 <button class="icon-button" data-close="setup-dialog" aria-label="Close new match">
@@ -199,6 +199,16 @@
 <p class="sheet-note">This name appears on the leaderboard and in online matches. Stored in this browser only.</p>
 <button type="button" class="small-button full-width" id="save-profile">Save name</button>
 <p id="profile-status" class="sheet-note" role="status"></p>
+</dialog>
+<dialog id="leaderboard-dialog" class="sheet wide-sheet">
+<div class="sheet-heading"><h2>LEADERBOARD</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard"><img src="assets/icons/x-bold.svg" alt=""></button></div>
+<div class="periods" role="group" aria-label="Leaderboard period"><button data-period="all" aria-pressed="true">All time</button><button data-period="month" aria-pressed="false">Month</button><button data-period="week" aria-pressed="false">Week</button><button data-period="today" aria-pressed="false">Today</button></div>
+<p id="lb-status" class="sheet-note" role="status">Loading standings…</p>
+<ol id="lb-ranking" class="ranking" aria-label="Player rankings"></ol>
+<h3 id="lb-badge-heading">BADGES</h3>
+<p id="lb-badge-status" class="sheet-note" role="status">Loading badges…</p>
+<div class="badges" id="lb-badges"></div>
+<p class="sheet-note">Ranked by wins, then win rate. Periods use UTC; weeks start Monday. Badges cover all time.</p>
 </dialog>
 <script src="engine.js">
 </script>  <script src="bots.js">

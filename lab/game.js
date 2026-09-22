@@ -371,6 +371,30 @@ for(const [button,dialog]of [['open-menu','menu-dialog'],['open-rules','rules-di
 $('open-setup').addEventListener('click',newMatch);
 $('open-profile').addEventListener('click',()=>{$('profile-name').value=getPlayerName();showDialog('profile-dialog')});
 $('save-profile').addEventListener('click',()=>{const name=$('profile-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('profile-status').textContent='Name saved as '+name;});
+let lbRequest=0;function loadLeaderboard(period='all'){
+  const revision=++lbRequest,status=$('lb-status'),ranking=$('lb-ranking');
+  status.hidden=false;status.textContent='Loading standings…';
+  fetch('/api/leaderboard?limit=50&period='+period,{cache:'no-store',signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{
+    if(revision!==lbRequest)return;if(!d.ok)throw new Error();ranking.replaceChildren();
+    if(!d.players.length){status.textContent='No finished matches in this period. Play a round to get on the board.';return;}
+    status.hidden=true;
+    d.players.forEach((p,i)=>{const row=document.createElement('li'),top=document.createElement('div');top.className='rank-top';
+      for(const[cls,text]of[['rank-number',i+1],['rank-name',p.name],['wins',`${p.wins} ${p.wins===1?'win':'wins'}`]]){const span=document.createElement('span');span.className=cls;span.textContent=text;top.append(span);}
+      const stats=document.createElement('p');stats.className='rank-stats';
+      for(const[val,lbl]of[[p.win_rate+'%','win rate'],[p.losses,'losses'],[p.matches_played,p.matches_played===1?'match':'matches'],[p.avg_turns,'avg turns'],[p.best_score,'best score']]){const span=document.createElement('span'),b=document.createElement('b');b.textContent=val;span.append(b,' '+lbl);stats.append(span);}
+      row.append(top,stats);ranking.append(row);});
+  }).catch(()=>{if(revision!==lbRequest)return;ranking.replaceChildren();status.textContent="Standings couldn't load.";});
+  const badges=$('lb-badges'),bmsg=$('lb-badge-status');
+  bmsg.hidden=false;bmsg.textContent='Loading badges…';
+  fetch('/api/badges',{cache:'no-store',signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{
+    if(!d.ok)throw new Error();badges.replaceChildren();bmsg.hidden=!!d.badges.length;bmsg.textContent='No badges earned yet.';
+    for(const badge of d.badges){const card=document.createElement('article');card.className='badge';const icon=document.createElement('img');icon.src='assets/icons/trophy-fill.svg';icon.alt='';card.append(icon);
+      for(const[tag,text]of[['h3',badge.label],['p',badge.player],['small',badge.value],['small',badge.desc]]){const el=document.createElement(tag);el.textContent=text;card.append(el);}badges.append(card);}
+  }).catch(()=>{bmsg.textContent="Badges couldn't load.";});
+}
+for(const btn of document.querySelectorAll('#leaderboard-dialog [data-period]'))btn.addEventListener('click',()=>{document.querySelectorAll('#leaderboard-dialog [data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));loadLeaderboard(btn.dataset.period);});
+$('open-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
+$('open-leaderboard-menu').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
 $('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
 $('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
