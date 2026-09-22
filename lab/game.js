@@ -423,11 +423,11 @@ $('llmtemp').addEventListener('change',()=>{if($('llmtemp').checkValidity())LLM.
 $('llmsave').addEventListener('click',async()=>{const key=$('llmkey').value.trim();if(!key)return;LLM.setApiKey($('llmprovider').value,key);$('llmkey').value='';await refreshModels();});
 $('llmclear').addEventListener('click',()=>{LLM.clearAllKeys();$('llmkey').value='';refreshModels();});
 $('export').addEventListener('click',()=>exportJson(payload()));$('retry-upload').addEventListener('click',retryUploads);addEventListener('online',retryUploads);
-$('dice-renderer').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null;$('dice-stage').classList.remove('has-webgl');announce('3D rendering is unavailable. Dice values remain accessible.');});
+$('game').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null;$('dice-stage').classList.remove('has-webgl');announce('3D rendering is unavailable. Dice values remain accessible.');});
 // Setup renders immediately; optional 3D loading never blocks starting a game.
 displayedValues=publicValues();render();modeChanged();
 const invite=new URLSearchParams(location.search).get('room');
 if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
 if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();}else showDialog('setup-dialog');
 retryUploads();
-import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));
+import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));const canvas=scene.renderer.domElement;const shell=$('game');shell.prepend(canvas);scene.container=shell;scene.resize();new ResizeObserver(()=>scene.resize()).observe(shell);$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));
