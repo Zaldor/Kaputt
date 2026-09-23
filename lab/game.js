@@ -328,6 +328,7 @@ async function roomEntry(kind){
   finally{roomBusy=false;for(const id of ['create-room','join-room-btn','resume-room'])$(id).disabled=false;}
 }
 function newMatch(){
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());
   if(remote.active&&!connection.fatal&&remoteRoom?.status!=='closed'){showDialog('leave-dialog');return;}
   if(remote.active){remote.detach();remoteRoom=null;setup.mode='human';match=E.createMatch(setup);displayedValues=[null,null];scene?.setValues(displayedValues);render();}
   showStartScreen();
@@ -398,7 +399,7 @@ $('open-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dial
 $('open-leaderboard-menu').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('name-continue').addEventListener('click',()=>{const name=$('start-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('name-step').hidden=true;$('mode-step').hidden=false;$('start-player-name').textContent=name;});
 $('start-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('name-continue').click();}});
-for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{hideStartScreen();const mode=btn.dataset.mode;if(mode==='remote'){$('mode').value='remote';modeChanged();showDialog('setup-dialog');}else if(mode==='human'){startMatch({...setup,mode:'human'});}else{startMatch({...setup,mode});}});
+for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{hideStartScreen();const mode=btn.dataset.mode;if(mode==='remote'){$('mode').value='remote';modeChanged();showDialog('setup-dialog');}else if(mode==='human'){$('mode').value='human';modeChanged();showDialog('setup-dialog');}else{$('mode').value=mode;modeChanged();showDialog('setup-dialog');}});
 $('start-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('change-name').addEventListener('click',()=>{$('name-step').hidden=false;$('mode-step').hidden=true;$('start-name').value=getPlayerName();$('start-name').focus();$('start-name').select();});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
