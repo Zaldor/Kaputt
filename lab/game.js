@@ -88,7 +88,6 @@ function render(){
   number($('opponent-score'),match.players[other].score);number($('self-score'),match.players[self].score);number($('ntb'),match.ntb);
   for(const [prefix,index] of [['opponent',other],['self',self]]){$(`${prefix}-kaputts`).textContent=`${match.players[index].kaputt}/${setup.kaputtLimit}`;drawPenalties(`${prefix}-dots`,match.players[index].kaputt);}
   $('explanation-target').textContent=match.ntb;
-  $('attack-short').textContent=`Multiply · beat ${match.ntb}`;
   for(let i=0;i<2;i++){
     const button=$(i?'die-right':'die-left'),value=displayedValues[i],canReveal=canAct&&(phase==='rolled'||phase==='chosen'&&i!==state.firstDieIndex);
     button.disabled=!canReveal;button.setAttribute('aria-label',value===null?`${canReveal?'Reveal ':''}${i?'right':'left'} die${canReveal?'':', hidden'}`:`${i?'Right':'Left'} die: ${value}`);
