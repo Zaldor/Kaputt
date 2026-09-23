@@ -64,6 +64,29 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 @media(min-height:741px){.turn-message{min-height:10.2cqw}.actions-zone{padding-bottom:4.2cqw}}
 @media(max-height:630px){.choice-explanations{display:none}.play-area{padding-top:0}.game-shell:has(.connection-bar:not([hidden])) .game-header{min-height:54px;height:54px}.game-shell:has(.connection-bar:not([hidden])) .target-stage{height:28cqw}.game-shell:has(.connection-bar:not([hidden])) .dice-stage{height:36cqw}}
 
+/* Start screen onboarding */
+#start-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100svh;padding:24px 20px;text-align:center;gap:16px;z-index:10;background:#ffe467 url('assets/arena.webp') center 160px/100% auto}
+.game-shell[data-start="false"] #start-screen,.game-shell:not([data-start="true"]) #start-screen{display:none}
+.start-logo{width:min(70vw,320px);height:auto;margin-bottom:4px}
+.start-tagline{font-size:22px;font-weight:800;color:#173888;letter-spacing:.04em;margin-bottom:12px}
+#name-step{width:min(100%,380px)}
+.start-label{display:block;font-size:18px;font-weight:700;color:#173888;margin-bottom:10px}
+.start-name-row{display:flex;gap:10px}
+.start-name-row input{flex:1;min-width:0;border:2px solid #173888;border-radius:14px;background:#fffdf5;color:#122758;padding:14px 16px;font-size:18px;font-weight:600;min-height:52px}
+.start-name-row input:focus{outline:3px solid #e75412;outline-offset:2px}
+.start-continue{border-radius:14px;padding:14px 24px;font-size:18px;min-height:52px;white-space:nowrap}
+.start-welcome{font-size:18px;font-weight:600;color:#173888;margin-bottom:16px}
+.start-welcome b{color:#0b2051}
+#mode-step{width:min(100%,380px)}
+.start-modes{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.start-mode{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px 12px;border-radius:20px;border:2px solid #173888;background:linear-gradient(180deg,#1e4a9a 0%,#173888 100%);color:#f7f6ff;box-shadow:inset 0 2px 4px #5575ac,inset 0 -6px 12px #0b1d48,0 4px 8px #0b1d4844;cursor:pointer;transition:transform .12s,filter .12s}
+.start-mode:hover{filter:brightness(1.08)}
+.start-mode:active{transform:translateY(2px);box-shadow:inset 0 1px 3px #5575ac,inset 0 -3px 6px #0b1d48}
+.start-mode img{width:32px;height:32px;filter:brightness(0) invert(1)}
+.start-mode strong{font-size:17px;font-weight:800;letter-spacing:.02em}
+.start-mode span{font-size:13px;font-weight:500;opacity:.8}
+.start-change-name{margin-top:8px;font-size:14px}
+
 /* Leaderboard in-app dialog */
 .periods{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}.periods button{min-height:44px;padding:8px 12px;border:1px solid #b2a3d5;border-radius:12px;background:#fff9e9;font-weight:700}.periods button[aria-pressed="true"]{background:#173888;color:white;border-color:#173888}
 .ranking{list-style:none;margin:0;padding:0;display:grid;gap:12px}.ranking li{background:#fff9e9;border:1px solid #e4d6a6;border-radius:22px;padding:16px;box-shadow:0 3px 0 #e5d691}.rank-top{display:flex;align-items:center;gap:12px}.rank-number{background:#c6bdff;border-radius:50%;width:38px;height:38px;display:grid;place-items:center;font-weight:800;flex-shrink:0}.rank-name{font-size:22px;font-weight:800;overflow-wrap:anywhere;flex:1}.wins{font-weight:800;white-space:nowrap}.rank-stats{display:flex;gap:12px;flex-wrap:wrap;font-size:14px;color:#565b78;margin:12px 0 0 50px}.rank-stats b{color:#102459}

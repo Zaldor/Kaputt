@@ -7,6 +7,8 @@ const NOUN=['Fox','Wolf','Hawk','Bear','Lynx','Raven','Viper','Tiger','Eagle','C
 function generateName(){return ADJ[Math.floor(Math.random()*ADJ.length)]+NOUN[Math.floor(Math.random()*NOUN.length)]}
 function getPlayerName(){let n;try{n=localStorage.getItem('kaputt-player-name')}catch{};if(!n||n==='You'){n=generateName();try{localStorage.setItem('kaputt-player-name',n)}catch{}};return n}
 function setPlayerName(n){try{localStorage.setItem('kaputt-player-name',n)}catch{}}
+function showStartScreen(){const hasName=!!localStorage.getItem('kaputt-player-name')&&localStorage.getItem('kaputt-player-name')!=='You';$('game').dataset.start='true';$('name-step').hidden=hasName;$('mode-step').hidden=!hasName;if(hasName)$('start-player-name').textContent=getPlayerName();$('start-name').value=getPlayerName();}
+function hideStartScreen(){$('game').dataset.start='false';}
 let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:getPlayerName(),player2Name:'Player 2'};
 let match=E.createMatch(setup), matchId=randomId();
 let version=0,busy=false,passing=false,botThinking=false,busyMessage='';
@@ -328,8 +330,7 @@ async function roomEntry(kind){
 function newMatch(){
   if(remote.active&&!connection.fatal&&remoteRoom?.status!=='closed'){showDialog('leave-dialog');return;}
   if(remote.active){remote.detach();remoteRoom=null;setup.mode='human';match=E.createMatch(setup);displayedValues=[null,null];scene?.setValues(displayedValues);render();}
-  $('player-name').value=getPlayerName();
-  showDialog('setup-dialog');modeChanged();
+  showStartScreen();
 }
 let modelRequest=0;
 async function refreshModels(){
@@ -395,6 +396,11 @@ let lbRequest=0;function loadLeaderboard(period='all'){
 for(const btn of document.querySelectorAll('#leaderboard-dialog [data-period]'))btn.addEventListener('click',()=>{document.querySelectorAll('#leaderboard-dialog [data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));loadLeaderboard(btn.dataset.period);});
 $('open-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('open-leaderboard-menu').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
+$('name-continue').addEventListener('click',()=>{const name=$('start-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('name-step').hidden=true;$('mode-step').hidden=false;$('start-player-name').textContent=name;});
+$('start-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('name-continue').click();}});
+for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{hideStartScreen();const mode=btn.dataset.mode;if(mode==='remote'){$('mode').value='remote';modeChanged();showDialog('setup-dialog');}else if(mode==='human'){startMatch({...setup,mode:'human'});}else{startMatch({...setup,mode});}});
+$('start-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
+$('change-name').addEventListener('click',()=>{$('name-step').hidden=false;$('mode-step').hidden=true;$('start-name').value=getPlayerName();$('start-name').focus();});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
 $('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
 $('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
@@ -428,6 +434,6 @@ $('game').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null
 displayedValues=publicValues();render();modeChanged();
 const invite=new URLSearchParams(location.search).get('room');
 if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
-if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();}else showDialog('setup-dialog');
+if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();hideStartScreen();}else if(invite){hideStartScreen();}else{showStartScreen();}
 retryUploads();
 import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));const canvas=scene.renderer.domElement;const shell=$('game');shell.prepend(canvas);scene.container=shell;scene.resize();new ResizeObserver(()=>scene.resize()).observe(shell);$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));

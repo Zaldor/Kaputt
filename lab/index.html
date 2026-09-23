@@ -2,7 +2,24 @@
 <html lang="en">
 <head>  <meta charset="utf-8">  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">  <meta name="theme-color" content="#11265d">  <meta name="description" content="Roll two dice. Reveal one. Make your call. KAPUTT! is a head-to-head game of risk, nerve and strategy.">  <title>KAPUTT! — Roll. Reveal. Rival.</title>  <link rel="icon" type="image/svg+xml" href="assets/icons/dice-five-fill.svg">  <link rel="preload" href="assets/fonts/barlow-800.ttf" as="font" type="font/ttf" crossorigin>  <link rel="stylesheet" href="game.css">
 </head>
-<body>  <main class="game-shell" id="game" aria-label="KAPUTT game">    <header class="game-header">      <h1>
+<body>  <main class="game-shell" id="game" aria-label="KAPUTT game">    <section id="start-screen" aria-label="Start screen">
+<img class="start-logo" src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
+<p class="start-tagline">Roll. Reveal. Rival.</p>
+<div id="name-step">
+<label class="start-label" for="start-name">Choose your name</label>
+<div class="start-name-row"><input id="start-name" type="text" maxlength="16" placeholder="e.g. SwiftFox" autocomplete="off"><button id="name-continue" class="game-button start-continue">CONTINUE</button></div>
+</div>
+<div id="mode-step" hidden>
+<p class="start-welcome">Welcome back, <b id="start-player-name"></b></p>
+<div class="start-modes">
+<button class="start-mode" data-mode="random"><img src="assets/icons/dice-five-fill.svg" alt=""><strong>Play Solo</strong><span>vs a bot</span></button>
+<button class="start-mode" data-mode="human"><img src="assets/icons/users-bold.svg" alt=""><strong>Play Local</strong><span>pass &amp; play</span></button>
+<button class="start-mode" data-mode="remote"><img src="assets/icons/arrow-right-bold.svg" alt=""><strong>Play Online</strong><span>remote VS</span></button>
+<button class="start-mode" id="start-leaderboard"><img src="assets/icons/trophy-fill.svg" alt=""><strong>Leaderboard</strong><span>rankings</span></button>
+</div>
+<button class="text-button start-change-name" id="change-name">Change name</button>
+</div>
+</section>    <header class="game-header">      <h1>
 <img src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
 </h1>      <div class="header-icons">      <button class="menu-button" id="open-profile" aria-label="Your profile">
 <img src="assets/icons/users-bold.svg" alt="">
