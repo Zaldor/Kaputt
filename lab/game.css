@@ -35,9 +35,8 @@ html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
 
 .game-button:disabled{opacity:.68;filter:saturate(.55)}
 .sheet-primary{min-height:88px;padding:14px 12px 23px;font-size:24px;margin-top:16px}
-.choice-explanations{margin-top:1cqw;min-height:13cqw;font-size:3.65cqw;padding:0 1cqw}
-.outcome-detail{min-height:13cqw;font-size:4cqw;padding-top:1cqw}
-.actions-zone{margin-top:auto;padding-bottom:3cqw;min-height:28cqw;display:flex;flex-direction:column;justify-content:flex-end}
+
+.outcome-detail{min-height:13cqw;font-size:4cqw;padding-top:1cqw}.actions-zone{margin-top:auto;padding-bottom:3cqw;min-height:28cqw;display:flex;flex-direction:column;justify-content:flex-end}
 .turn-message{min-height:12cqw}
 .connection-bar{display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 16px;font-size:14px;font-weight:600;background:#fff2bf;border-bottom:1px solid #dfca75;min-height:38px}
 .connection-bar[data-connected="false"]{background:#fff1da;color:#80431e}

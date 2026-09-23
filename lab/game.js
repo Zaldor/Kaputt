@@ -87,14 +87,14 @@ function render(){
   $('self-name').textContent=match.isTerminal?(match.winner===self?'WINNER!':'GOOD GAME'):`${playerLabel(self)}${match.currentPlayer===self?' · YOUR TURN':''}`;
   number($('opponent-score'),match.players[other].score);number($('self-score'),match.players[self].score);number($('ntb'),match.ntb);
   for(const [prefix,index] of [['opponent',other],['self',self]]){$(`${prefix}-kaputts`).textContent=`${match.players[index].kaputt}/${setup.kaputtLimit}`;drawPenalties(`${prefix}-dots`,match.players[index].kaputt);}
-  $('explanation-target').textContent=match.ntb;
+  $('explanation-target')&&($('explanation-target').textContent=match.ntb);
   for(let i=0;i<2;i++){
     const button=$(i?'die-right':'die-left'),value=displayedValues[i],canReveal=canAct&&(phase==='rolled'||phase==='chosen'&&i!==state.firstDieIndex);
     button.disabled=!canReveal;button.setAttribute('aria-label',value===null?`${canReveal?'Reveal ':''}${i?'right':'left'} die${canReveal?'':', hidden'}`:`${i?'Right':'Left'} die: ${value}`);
     button.querySelector('.die-fallback').textContent=value??'?';button.querySelector('.die-fallback').classList.toggle('revealed',value!==null);
   }
   const decisionVisible=phase==='first'&&!busy&&!isBotTurn()&&(!online()||match.currentPlayer===self);
-  $('decision-actions').hidden=!decisionVisible;$('choice-explanations').hidden=!decisionVisible;$('attack').disabled=!canAct;$('defense').disabled=!canAct;
+  $('decision-actions').hidden=!decisionVisible;$('attack').disabled=!canAct;$('defense').disabled=!canAct;
   const primary=$('primary-action');primary.hidden=decisionVisible||phase==='rolled'&&!busy&&canAct;
   primary.disabled=!canAct;
   let title='READY TO ROLL?',detail='Two dice. One decision.',action='ROLL THE DICE';

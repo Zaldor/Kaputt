@@ -88,40 +88,44 @@ const completed = `WITH completed AS (
 const periods = {all:'1',today:"at>=date('now','start of day')",week:"at>=date('now','-6 days','weekday 1')",month:"at>=date('now','start of month')"};
 export async function leaderboard(db,limit=25,period='all') {
  if(!periods[period])throw new ApiError('Choose all, today, week, or month.');
- const rows=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,SUM(1-won) losses,COUNT(*) matches_played,
-   SUM(score) total_points,MAX(score) best_score,ROUND(AVG(turns),1) avg_turns,ROUND(AVG(score),1) avg_score,
-   ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results WHERE ${periods[period]}
-   GROUP BY identity ORDER BY wins DESC,win_rate DESC,name LIMIT ?`).bind(limit).all();
- return rows.results;
+ try {
+  const rows=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,SUM(1-won) losses,COUNT(*) matches_played,
+    SUM(score) total_points,MAX(score) best_score,ROUND(AVG(turns),1) avg_turns,ROUND(AVG(score),1) avg_score,
+    ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results WHERE ${periods[period]}
+    GROUP BY identity ORDER BY wins DESC,win_rate DESC,name LIMIT ?`).bind(limit).all();
+  return rows.results;
+ } catch { return []; }
 }
 export async function badges(db) {
- const summary=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,COUNT(*) matches_played,
-   MIN(CASE WHEN won THEN turns END) fastest,MAX(turns) longest,MAX(score) best_score,
-   ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results GROUP BY identity`).all();
- const turns=await db.prepare(`WITH played AS (
-   SELECT CASE t.actor WHEN 'P1' THEN COALESCE(json_extract(m.payload_json,'$.playerAId'),'name:'||m.player_a) WHEN 'P2' THEN COALESCE(json_extract(m.payload_json,'$.playerBId'),'name:'||m.player_b) ELSE 'name:'||t.actor END identity,
-     CASE t.actor WHEN 'P1' THEN m.player_a WHEN 'P2' THEN m.player_b ELSE t.actor END name,
-     t.choice,t.extreme,t.kaputt,t.strategic_hold
-   FROM turns t JOIN matches m ON m.id=t.match_id
-   UNION ALL
-   SELECT CASE json_extract(j.value,'$.player') WHEN 0 THEN COALESCE(r.host_uuid,'name:'||r.host_name) ELSE COALESCE(r.guest_uuid,'name:'||r.guest_name) END,
-     CASE json_extract(j.value,'$.player') WHEN 0 THEN r.host_name ELSE r.guest_name END,
-     COALESCE(json_extract(j.value,'$.choice'),json_extract(j.value,'$.action')),json_extract(j.value,'$.extreme'),json_extract(j.value,'$.kaputt'),json_extract(j.value,'$.kaputt')
-   FROM rooms r,json_each(r.current_state_json,'$.history') j WHERE r.protocol=1 AND r.status='finished' AND r.match_id IS NULL AND json_valid(r.current_state_json)
- ) SELECT identity,MAX(name) name,SUM(choice='attack') attacks,SUM(choice='defense') defenses,SUM(extreme) extremes,SUM(kaputt) kaputts,SUM(strategic_hold) holds FROM played GROUP BY identity`).all();
- const result=[];
- const award=(id,label,desc,rows,metric,unit,min=false)=>{
-   const eligible=rows.filter(r=>r[metric]!==null&&r[metric]>0).sort((a,b)=>(min?a[metric]-b[metric]:b[metric]-a[metric])||a.name.localeCompare(b.name));
-   if(eligible.length)result.push({id,label,desc,player:eligible[0].name,value:`${eligible[0][metric]}${unit}`,identity:eligible[0].identity});
- };
- award('speed_demon','Speed Demon','Won in fewest turns',summary.results,'fastest',' turns',true);
- for(const [id,label,desc,metric,unit] of [
-   ['berserker','Berserker','Most total attacks','attacks',' attacks'],['iron_wall','Iron Wall','Most total defenses','defenses',' defenses'],
-   ['extreme_master','Extreme Master','Most Extreme events','extremes',' extremes'],['kaputt_magnet','Kaputt Magnet','Most Kaputt events suffered','kaputts',' Kaputts'],
-   ['hold_champion','Hold Champion','Most strategic holds','holds',' holds']])award(id,label,desc,turns.results,metric,unit);
- award('marathon_runner','Marathon Runner','Longest match played',summary.results,'longest',' turns');
- award('high_scorer','High Scorer','Highest single-match score',summary.results,'best_score',' pts');
- award('veteran','Veteran','Most matches played',summary.results,'matches_played',' matches');
- award('undefeated','Undefeated','Highest win rate (5+ matches)',summary.results.filter(r=>r.matches_played>=5),'win_rate','%');
- return result;
+ try {
+  const summary=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,COUNT(*) matches_played,
+    MIN(CASE WHEN won THEN turns END) fastest,MAX(turns) longest,MAX(score) best_score,
+    ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results GROUP BY identity`).all();
+  const turns=await db.prepare(`WITH played AS (
+    SELECT CASE t.actor WHEN 'P1' THEN COALESCE(json_extract(m.payload_json,'$.playerAId'),'name:'||m.player_a) WHEN 'P2' THEN COALESCE(json_extract(m.payload_json,'$.playerBId'),'name:'||m.player_b) ELSE 'name:'||t.actor END identity,
+      CASE t.actor WHEN 'P1' THEN m.player_a WHEN 'P2' THEN m.player_b ELSE t.actor END name,
+      t.choice,t.extreme,t.kaputt,t.strategic_hold
+    FROM turns t JOIN matches m ON m.id=t.match_id
+    UNION ALL
+    SELECT CASE json_extract(j.value,'$.player') WHEN 0 THEN COALESCE(r.host_uuid,'name:'||r.host_name) ELSE COALESCE(r.guest_uuid,'name:'||r.guest_name) END,
+      CASE json_extract(j.value,'$.player') WHEN 0 THEN r.host_name ELSE r.guest_name END,
+      COALESCE(json_extract(j.value,'$.choice'),json_extract(j.value,'$.action')),json_extract(j.value,'$.extreme'),json_extract(j.value,'$.kaputt'),json_extract(j.value,'$.kaputt')
+    FROM rooms r,json_each(r.current_state_json,'$.history') j WHERE r.protocol=1 AND r.status='finished' AND r.match_id IS NULL AND json_valid(r.current_state_json)
+  ) SELECT identity,MAX(name) name,SUM(choice='attack') attacks,SUM(choice='defense') defenses,SUM(extreme) extremes,SUM(kaputt) kaputts,SUM(strategic_hold) holds FROM played GROUP BY identity`).all();
+  const result=[];
+  const award=(id,label,desc,rows,metric,unit,min=false)=>{
+    const eligible=rows.filter(r=>r[metric]!==null&&r[metric]>0).sort((a,b)=>(min?a[metric]-b[metric]:b[metric]-a[metric])||a.name.localeCompare(b.name));
+    if(eligible.length)result.push({id,label,desc,player:eligible[0].name,value:`${eligible[0][metric]}${unit}`,identity:eligible[0].identity});
+  };
+  award('speed_demon','Speed Demon','Won in fewest turns',summary.results,'fastest',' turns',true);
+  for(const [id,label,desc,metric,unit] of [
+    ['berserker','Berserker','Most total attacks','attacks',' attacks'],['iron_wall','Iron Wall','Most total defenses','defenses',' defenses'],
+    ['extreme_master','Extreme Master','Most Extreme events','extremes',' extremes'],['kaputt_magnet','Kaputt Magnet','Most Kaputt events suffered','kaputts',' Kaputts'],
+    ['hold_champion','Hold Champion','Most strategic holds','holds',' holds']])award(id,label,desc,turns.results,metric,unit);
+  award('marathon_runner','Marathon Runner','Longest match played',summary.results,'longest',' turns');
+  award('high_scorer','High Scorer','Highest single-match score',summary.results,'best_score',' pts');
+  award('veteran','Veteran','Most matches played',summary.results,'matches_played',' matches');
+  award('undefeated','Undefeated','Highest win rate (5+ matches)',summary.results.filter(r=>r.matches_played>=5),'win_rate','%');
+  return result;
+ } catch { return []; }
 }
