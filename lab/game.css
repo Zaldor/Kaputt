@@ -67,6 +67,7 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 /* Start screen onboarding */
 #start-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100svh;padding:24px 20px;text-align:center;gap:16px;z-index:10;background:#ffe467 url('assets/arena.webp') center 160px/100% auto}
 .game-shell[data-start="false"] #start-screen,.game-shell:not([data-start="true"]) #start-screen{display:none}
+.game-shell[data-start="true"] .game-header,.game-shell[data-start="true"] .scoreboard,.game-shell[data-start="true"] .play-area,.game-shell[data-start="true"] .you,.game-shell[data-start="true"] .celebration,.game-shell[data-start="true"] .connection-bar{display:none}
 .start-logo{width:min(70vw,320px);height:auto;margin-bottom:4px}
 .start-tagline{font-size:22px;font-weight:800;color:#173888;letter-spacing:.04em;margin-bottom:12px}
 #name-step{width:min(100%,380px)}
