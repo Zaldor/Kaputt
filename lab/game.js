@@ -400,7 +400,7 @@ $('name-continue').addEventListener('click',()=>{const name=$('start-name').valu
 $('start-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('name-continue').click();}});
 for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{hideStartScreen();const mode=btn.dataset.mode;if(mode==='remote'){$('mode').value='remote';modeChanged();showDialog('setup-dialog');}else if(mode==='human'){startMatch({...setup,mode:'human'});}else{startMatch({...setup,mode});}});
 $('start-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
-$('change-name').addEventListener('click',()=>{$('name-step').hidden=false;$('mode-step').hidden=true;$('start-name').value=getPlayerName();$('start-name').focus();});
+$('change-name').addEventListener('click',()=>{$('name-step').hidden=false;$('mode-step').hidden=true;$('start-name').value=getPlayerName();$('start-name').focus();$('start-name').select();});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
 $('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
 $('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
@@ -413,7 +413,7 @@ $('retry-connection').addEventListener('click',()=>remote.retry().catch(error=>a
 $('copy-room').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(remoteRoom.code);$('lobby-status').textContent='Room code copied.';}catch{$('lobby-status').textContent=`Share this code: ${remoteRoom.code}`;}});
 $('share-room').addEventListener('click',async()=>{
   const url=new URL(location.href);url.pathname='/';url.search=`?room=${remoteRoom.code}`;url.hash='';
-  try{if(navigator.share)await navigator.share({title:'Play KAPUTT with me',text:`Join my KAPUTT room: ${remoteRoom.code}`,url:url.href});else{await navigator.clipboard.writeText(url.href);$('lobby-status').textContent='Invite link copied.';}}catch(error){if(error.name!=='AbortError')$('lobby-status').textContent=`Share room code ${remoteRoom.code}.`;}
+  try{if(navigator.share)await navigator.share({title:'Play KAPUTT with me',text:`Join my KAPUTT room: ${remoteRoom.code}`,url:url.href});else{try{await navigator.clipboard.writeText(url.href);$('lobby-status').textContent='Invite link copied.';}catch{$('lobby-status').textContent=`Share this invite link: ${url.href}`;}}}catch(error){if(error.name!=='AbortError')$('lobby-status').textContent=`Share room code ${remoteRoom.code}.`;}
 });
 $('leave-room').addEventListener('click',()=>showDialog('leave-dialog'));
 $('confirm-leave').addEventListener('click',async()=>{
@@ -428,7 +428,7 @@ $('llmprovider').addEventListener('change',refreshModels);$('llmmodel').addEvent
 $('llmtemp').addEventListener('change',()=>{if($('llmtemp').checkValidity())LLM.setTemperature(+$('llmtemp').value);});
 $('llmsave').addEventListener('click',async()=>{const key=$('llmkey').value.trim();if(!key)return;LLM.setApiKey($('llmprovider').value,key);$('llmkey').value='';await refreshModels();});
 $('llmclear').addEventListener('click',()=>{LLM.clearAllKeys();$('llmkey').value='';refreshModels();});
-$('export').addEventListener('click',()=>exportJson(payload()));$('retry-upload').addEventListener('click',retryUploads);addEventListener('online',retryUploads);
+$('export').addEventListener('click',()=>exportJson(payload()));$('retry-upload').addEventListener('click',retryUploads);addEventListener('online',retryUploads);document.addEventListener('visibilitychange',()=>{if(!document.hidden)retryUploads();});
 $('game').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null;$('dice-stage').classList.remove('has-webgl');announce('3D rendering is unavailable. Dice values remain accessible.');});
 // Setup renders immediately; optional 3D loading never blocks starting a game.
 displayedValues=publicValues();render();modeChanged();

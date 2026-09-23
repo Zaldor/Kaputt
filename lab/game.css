@@ -87,6 +87,9 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 .start-mode strong{font-size:17px;font-weight:800;letter-spacing:.02em}
 .start-mode span{font-size:13px;font-weight:500;opacity:.8}
 .start-change-name{margin-top:8px;font-size:14px}
+@media(max-width:360px){.start-logo{width:min(80vw,260px)}.start-tagline{font-size:18px}.start-modes{gap:8px}.start-mode{padding:14px 8px}.start-mode strong{font-size:15px}.start-mode span{font-size:12px}.start-name-row{flex-direction:column;gap:8px}.start-continue{width:100%}}
+@media(min-width:600px){#start-screen{padding:40px}.start-logo{width:min(50vw,380px)}.start-tagline{font-size:26px}.start-modes{gap:16px;max-width:440px;margin:0 auto}.start-mode{padding:24px 16px}.start-mode strong{font-size:19px}.start-mode span{font-size:14px}}
+@media(max-height:630px){#start-screen{gap:10px;padding:16px}.start-logo{width:min(60vw,220px)}.start-tagline{font-size:16px;margin-bottom:6px}.start-mode{padding:12px 8px;gap:4px}.start-mode img{width:26px;height:26px}.start-mode strong{font-size:15px}.start-mode span{font-size:11px}.start-welcome{margin-bottom:10px}}
 
 /* Leaderboard in-app dialog */
 .periods{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}.periods button{min-height:44px;padding:8px 12px;border:1px solid #b2a3d5;border-radius:12px;background:#fff9e9;font-weight:700}.periods button[aria-pressed="true"]{background:#173888;color:white;border-color:#173888}
