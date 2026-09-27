@@ -1,0 +1,17 @@
+{
+  "name": "KAPUTT Roll Reveal Rival",
+  "short_name": "KAPUTT",
+  "description": "Roll two dice, reveal one, then call Attack or Defense. KAPUTT! is a head-to-head dice game of risk, nerve and strategy — play solo against bots, pass-and-play, or online with a friend.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#11265d",
+  "background_color": "#ffe467",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
