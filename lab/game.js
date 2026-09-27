@@ -1,5 +1,5 @@
-import {RemoteClient, randomId, playerIdentity} from './remote-client.js';
-import {animate, enter, bump, shake, number, celebrate, cancelMotion, reduced, toggleMotion, motionEnabled} from './motion.js';
+import {RemoteClient, randomId, leaderboardId} from './remote-client.js';
+import {enter, bump, shake, number, celebrate, cancelMotion, reduced, toggleMotion, motionEnabled} from './motion.js';
 import {queueMatch, flushMatches, pendingMatches} from './match-outbox.js';
 const $=id=>document.getElementById(id), E=window.KaputtEngine, LLM=window.KaputtLLM;
 const ADJ=['Swift','Bold','Keen','Sharp','Wild','Calm','Brave','Dark','Iron','Silent','Lucky','Crimson','Golden','Phantom','Fierce'];
@@ -7,12 +7,15 @@ const NOUN=['Fox','Wolf','Hawk','Bear','Lynx','Raven','Viper','Tiger','Eagle','C
 function generateName(){return ADJ[Math.floor(Math.random()*ADJ.length)]+NOUN[Math.floor(Math.random()*NOUN.length)]}
 function getPlayerName(){let n;try{n=localStorage.getItem('kaputt-player-name')}catch{};if(!n||n==='You'){n=generateName();try{localStorage.setItem('kaputt-player-name',n)}catch{}};return n}
 function setPlayerName(n){try{localStorage.setItem('kaputt-player-name',n)}catch{}}
-function showStartScreen(){const hasName=!!localStorage.getItem('kaputt-player-name')&&localStorage.getItem('kaputt-player-name')!=='You';$('game').dataset.start='true';$('name-step').hidden=hasName;$('mode-step').hidden=!hasName;if(hasName)$('start-player-name').textContent=getPlayerName();$('start-name').value=getPlayerName();}
-function hideStartScreen(){$('game').dataset.start='false';}
+function showStartScreen(){gameActive=false;const hasName=!!localStorage.getItem('kaputt-player-name')&&localStorage.getItem('kaputt-player-name')!=='You';$('game').dataset.start='true';$('name-step').hidden=hasName;$('mode-step').hidden=!hasName;if(hasName)$('start-player-name').textContent=getPlayerName();$('start-name').value=getPlayerName();}
+function hideStartScreen(){gameActive=true;$('game').dataset.start='false';}
+// Invariant: the home screen is up exactly while gameActive is false; hideStartScreen() is what arms it.
+let gameActive=false;
 let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:getPlayerName(),player2Name:'Player 2'};
 let match=E.createMatch(setup), matchId=randomId();
 let version=0,busy=false,passing=false,botThinking=false,busyMessage='';
 let scene=null,botWorker=null,botCancel=null,botReason='',displayedValues=[null,null],lastResult=null;
+let frozenPrompt={title:'READY TO ROLL?',detail:'Two dice. One decision.'};
 let events=['Match started.'],uploaded=false,uploadStatus='',sound=true,audioContext=null;
 let connection={connected:false,pending:false,sending:false,message:''},remoteRoom=null,roomBusy=false;
 try{sound=localStorage.getItem('kaputt-sound')!=='off';}catch{}
@@ -42,9 +45,42 @@ function sfx(kind){
   else if(kind==='success'){tone(440,.1);tone(660,.14,.08);}
   else tone(520,.07,0,'triangle');
 }
-function showPopup(text,kind){
-  const el=$('event-popup');$('event-popup-text').textContent=text;el.className=`event-popup pop-${kind}`;
-  animate(el,[{opacity:0,transform:'translate(-50%,-50%) scale(.7)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.05)',offset:.15},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.7},{opacity:0,transform:'translate(-50%,-65%) scale(.98)'}],1400);
+function resultHeadline(self){
+  if(match.isTerminal&&match.winner!=null){
+    if(setup.mode==='human')return `${playerLabel(match.winner).toUpperCase()} WINS!`;
+    return match.winner===self?'YOU WON!':'YOU LOST!';
+  }
+  if(!lastResult)return '';
+  return lastResult.kaputt?'KAPUTT!':lastResult.extreme?`EXTREME! +${lastResult.points}`:`+${lastResult.points} POINTS`;
+}
+function syncResultPopup(open,ctx){
+  const popup=$('result-popup');
+  if(!open){popup.hidden=true;return;}
+  const {self,other,outcomeText,detail,action,disabled}=ctx;
+  popup.hidden=false;
+  popup.className=`result-popup pop-${match.isTerminal?(match.winner===self?'win':'lose'):lastResult?.kaputt?'kaputt':lastResult?.extreme?'extreme':'success'}`;
+  $('result-headline').textContent=resultHeadline(self);
+  let math=outcomeText||detail;
+  if(match.isTerminal&&online()){
+    const ready=remoteRoom?.state?.rematchReady;
+    if(ready?.[other])math='Your friend wants a rematch. Ready?';
+    else if(ready?.[self])math='Waiting for your friend to accept the rematch.';
+  }
+  $('result-math').textContent=math;
+  const chips=[];
+  if(lastResult?.extreme)chips.push(['badge-extreme','EXTREME']);
+  if(lastResult?.kaputt)chips.push(['badge-kaputt','KAPUTT']);
+  if(lastResult&&(lastResult.strategicHold||lastResult.kaputt&&lastResult.ntbAfter===lastResult.ntbBefore))chips.push(['badge-hold','HOLD']);
+  if(match.isTerminal){
+    const reason=lastResult?.winReason||match.winReason;
+    const label=reason==='score target'?'SCORE TARGET':reason==='opponent reached Kaputt limit'?'KAPUTT LIMIT':reason?String(reason).toUpperCase():'';
+    if(label)chips.push(['badge-win',label]);
+  }
+  const badges=$('result-badges');
+  badges.hidden=!chips.length;
+  badges.replaceChildren(...chips.map(([kind,text])=>{const chip=document.createElement('span');chip.className=`result-badge ${kind}`;chip.textContent=text;return chip;}));
+  $('result-action-label').textContent=action;
+  $('result-action').disabled=disabled;
 }
 function drawPenalties(id,count){
   const root=$(id);root.classList.toggle('many',setup.kaputtLimit>5);
@@ -108,8 +144,13 @@ function render(){
     // Local engine changes player on nextTurn; online engine does so on resolve.
     if(!online())primary.disabled=busy||passing;
   }
-  $('outcome-detail').hidden=phase!=='resolved'||!lastResult||busy;
-  if(lastResult)$('outcome-detail').textContent=lastResult.extreme?(lastResult.choice==='attack'?'1 & 6: Extreme Attack becomes 36.':'1 & 6: Extreme Defense scores 1 and sets the target to 2.'):`${lastResult.visibleDie} ${lastResult.choice==='attack'?'×':'+'} ${lastResult.hiddenDie} = ${lastResult.value}. ${lastResult.kaputt?`Must beat ${lastResult.ntbBefore}.`:`New target: ${lastResult.ntbAfter}.`}`;
+  const outcomeText=lastResult?lastResult.extreme?(lastResult.choice==='attack'?'1 & 6: Extreme Attack becomes 36.':'1 & 6: Extreme Defense scores 1 and sets the target to 2.'):`${lastResult.visibleDie} ${lastResult.choice==='attack'?'×':'+'} ${lastResult.hiddenDie} = ${lastResult.value}. ${lastResult.kaputt?`Must beat ${lastResult.ntbBefore}.`:`New target: ${lastResult.ntbAfter}.`}`:'';
+  // The #result-popup owns every resolved message; while it is open the inline row freezes on the pre-reveal prompt and #outcome-detail stays hidden so the action button never shifts.
+  const popupOpen=(match.isTerminal||phase==='resolved'&&!!lastResult)&&!busy&&!passing
+    &&!(online()&&connection.fatal)
+    &&!(online()&&remoteRoom&&['waiting','closed'].includes(remoteRoom.status));
+  $('outcome-detail').hidden=popupOpen||phase!=='resolved'||!lastResult||busy;
+  if(lastResult)$('outcome-detail').textContent=outcomeText;
   if(online()&&match.currentPlayer!==self&&!match.isTerminal){
     if(phase!=='resolved')title=`${playerLabel(other).toUpperCase()}’S TURN`;
     detail=phase==='rolled'?'Your friend is choosing a die.':phase==='first'?'Your friend is deciding: Attack or Defense.':phase==='chosen'?'Move locked. Waiting for the second reveal.':'Watch their move, then make yours.';
@@ -127,8 +168,17 @@ function render(){
   if(online()&&connection.fatal){title='ROOM UNAVAILABLE';detail='Your saved match history has not been deleted.';action='NEW MATCH';primary.hidden=false;primary.disabled=false;}
   if(online()&&remoteRoom?.status==='waiting'){title='WAITING FOR A FRIEND';detail=`Share room ${remoteRoom.code} to get started.`;action='VIEW ROOM';primary.hidden=false;primary.disabled=false;}
   if(online()&&remoteRoom?.status==='closed'){title='ROOM CLOSED';detail='Your match history is still available in Match lab.';action='NEW MATCH';primary.hidden=false;primary.disabled=false;}
-  if($('turn-title').textContent!==title){$('turn-title').textContent=title;enter($('turn-message'));}
-  $('turn-detail').textContent=detail;$('primary-label').textContent=action;
+  if(popupOpen){
+    if($('turn-title').textContent!==frozenPrompt.title)$('turn-title').textContent=frozenPrompt.title;
+    $('turn-detail').textContent=frozenPrompt.detail;
+  }else{
+    if(!busy)frozenPrompt={title,detail};
+    if($('turn-title').textContent!==title){$('turn-title').textContent=title;enter($('turn-message'));}
+    $('turn-detail').textContent=detail;
+  }
+  $('primary-label').textContent=action;
+  syncResultPopup(popupOpen,{self,other,outcomeText,detail,action,disabled:primary.disabled});
+  if(popupOpen)primary.disabled=true;
   $('toggle-sound').setAttribute('aria-pressed',String(sound));$('sound-label').textContent=sound?'Sound on':'Sound off';
   $('toggle-motion').setAttribute('aria-pressed',String(motionEnabled()));$('motion-label').textContent=motionEnabled()?'Animations on':'Animations off';
   renderConnection();if($('lab-dialog').open)renderLab();
@@ -148,10 +198,7 @@ function resultFeedback(event){
   log(`#${event.turn} ${playerLabel(event.player)} ${event.choice} · ${event.visibleDie}/${event.hiddenDie} → ${event.value} · +${event.points}${event.kaputt?' KAPUTT':''}`);
   sfx(match.isTerminal?'win':event.kaputt?'kaputt':'success');
   if(event.kaputt)shake(document.querySelector(event.player===me()?'.you':'.opponent'));
-  if(match.isTerminal){showPopup(`${playerLabel(match.winner).toUpperCase()} WINS!`,'win');celebrate($('celebration'));}
-  else if(event.extreme)showPopup(`EXTREME · ${event.value}`,'extreme');
-  else if(event.kaputt)showPopup('KAPUTT!','kaputt');
-  else showPopup(`+${event.points} POINTS`,'success');
+  if(match.isTerminal)celebrate($('celebration'));
   if(!reduced()&&navigator.vibrate)navigator.vibrate(event.kaputt?[25,35,25]:18);
   announce(`${event.kaputt?'Kaputt. No points.':`${event.points} points.`} Number to beat ${event.ntbAfter}.${match.isTerminal?` ${playerLabel(match.winner)} wins.`:''}`);
 }
@@ -193,7 +240,7 @@ function stopAsyncWork(){
 function startMatch(nextSetup=setup){
   stopAsyncWork();remote.detach();remoteRoom=null;setup={...nextSetup};match=E.createMatch(setup);matchId=randomId();
   displayedValues=[null,null];lastResult=null;botReason='';uploaded=false;uploadStatus='';events=[];log('Match started.');scene?.setValues(displayedValues);
-  document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());render();enter($('game'));announce(`New match. ${playerLabel(0)} to roll.`);
+  hideStartScreen();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());render();enter($('game'));announce(`New match. ${playerLabel(0)} to roll.`);
 }
 
 function workerChoice(state, token) {
@@ -244,7 +291,7 @@ function payload(){
   if(online())return {id:remoteRoom.state?.matchId,build:'K3-E1-REMOTE-2',source:'remote-vs',roomCode:remoteRoom.code,...setup,...remoteRoom.state};
   const data=match.exportMatch(),p=data.players;
   return {id:matchId,build:'K3-E1-ARCADE',source:setup.mode==='human'?'human-human':'human-bot',ruleset:'K3-E1',target:setup.target,kaputtLimit:setup.kaputtLimit,startingNtb:setup.startingNtb,
-    playerA:playerLabel(0),playerB:playerLabel(1),playerAId:playerIdentity(),playerBId:setup.mode==='human'?`${playerIdentity()}-p2`:`bot-${setup.mode}`,winner:data.winner===null?null:`P${data.winner+1}`,terminalCause:data.winReason,turns:data.turns,
+    playerA:playerLabel(0),playerB:playerLabel(1),playerAId:leaderboardId(),playerBId:setup.mode==='human'?`${leaderboardId()}-p2`:`bot-${setup.mode}`,winner:data.winner===null?null:`P${data.winner+1}`,terminalCause:data.winReason,turns:data.turns,
     scoreA:p[0].score,scoreB:p[1].score,kaputtA:p[0].kaputt,kaputtB:p[1].kaputt,leadChanges:data.leadChanges,extremes:data.extremes,finalNtb:data.finalNtb,
     setup:{...setup},history:data.history.map(t=>({...t,actor:`P${t.player+1}`,strategicHold:t.kaputt&&t.ntbAfter===t.ntbBefore?1:0}))};
 }
@@ -269,7 +316,7 @@ function remoteModel(room){
 async function receiveRoom(room,changed){
   const previous=remoteRoom,newSession=!online()||previous?.code!==room.code;
   remoteRoom=room;
-  if(newSession){stopAsyncWork();events=[];botReason='';announce('Online room connected.');}
+  if(newSession){stopAsyncWork();events=[];botReason='';announce('Online room connected.');hideStartScreen();}
   setup={mode:'remote',target:room.target,kaputtLimit:room.kaputtLimit,startingNtb:room.startingNtb,playerName:room.hostName,player2Name:room.guestName||'Friend'};
   match=remoteModel(room);lastResult=room.state?.lastResult||null;
   if(!changed){renderConnection();return;}
@@ -308,10 +355,14 @@ async function remoteCommand(action,details={}){
 }
 function settings(){return {mode:$('mode').value,target:+$('target').value,kaputtLimit:+$('klimit').value,startingNtb:+$('starting-ntb').value,playerName:$('player-name').value.trim()||'You',player2Name:$('player2-name').value.trim()||'Player 2'};}
 function modeChanged(){
-  const mode=$('mode').value,isLLM=mode.startsWith('llm_');
-  $('p2-name-label').hidden=mode!=='human';$('llmsettings').hidden=!isLLM;if(isLLM)populateLLM();
-  $('remote-settings').hidden=mode!=='remote';$('start-local').hidden=mode==='remote';$('setup-note').hidden=mode==='remote';
-  $('resume-room').hidden=!remote.saved;
+  const mode=$('mode').value,local=mode==='human',remoteMode=mode==='remote',solo=!local&&!remoteMode,isLLM=solo&&mode.startsWith('llm_');
+  $('mode-label').hidden=!solo;
+  for(const option of $('mode').options)option.hidden=solo&&(option.value==='human'||option.value==='remote');
+  $('p2-name-label').hidden=!local;$('llmsettings').hidden=!isLLM;if(isLLM)populateLLM();
+  $('remote-settings').hidden=!remoteMode;$('create-room').hidden=true;$('start-local').hidden=false;
+  $('setup-note').hidden=remoteMode;$('resume-room').hidden=!remote.saved;
+  $('setup-title').textContent=remoteMode?'PLAY ONLINE':local?'PLAY LOCAL':'PLAY SOLO';
+  $('start-local').textContent=remoteMode?'CREATE A ROOM':'LET’S PLAY';
 }
 async function roomEntry(kind){
   if(roomBusy||remote.active)return;
@@ -320,8 +371,8 @@ async function roomEntry(kind){
   $('room-status').textContent=kind==='create'?'Creating your room…':'Joining your friend…';$('export-legacy').hidden=true;
   try{
     const s=settings();
-    if(kind==='create')await remote.create({hostName:s.playerName,target:s.target,kaputtLimit:s.kaputtLimit,startingNtb:s.startingNtb});
-    else await remote.join($('join-code').value.trim().toUpperCase(),s.playerName);
+    if(kind==='create')await remote.create({hostName:s.playerName,target:s.target,kaputtLimit:s.kaputtLimit,startingNtb:s.startingNtb,playerId:leaderboardId()});
+    else await remote.join($('join-code').value.trim().toUpperCase(),s.playerName,leaderboardId());
     $('room-status').textContent='';
   }catch(error){$('room-status').textContent=error.message;$('export-legacy').hidden=error.status!==426;if(!error.status)$('online-link').hidden=false;}
   finally{roomBusy=false;for(const id of ['create-room','join-room-btn','resume-room'])$(id).disabled=false;}
@@ -353,7 +404,7 @@ for(const [id,index]of [['die-left',0],['die-right',1]])$(id).addEventListener('
   if(match.phase==='rolled')revealFirst(index);else if(match.phase==='chosen'&&index!==match.firstDieIndex)resolveTurn();
 });
 for(const choice of ['attack','defense'])$(choice).addEventListener('click',()=>{if(humanCanAct())online()?remoteCommand('choose',{choice}):chooseAction(choice);});
-$('primary-action').addEventListener('click',()=>{
+function primaryAction(){
   if(busy||passing)return;
   if(online()){
     if(connection.fatal)return newMatch();
@@ -365,24 +416,28 @@ $('primary-action').addEventListener('click',()=>{
   }
   if(match.isTerminal)return startMatch();
   if(match.phase==='idle')rollTurn();else if(match.phase==='chosen')resolveTurn();else if(match.phase==='resolved')nextTurn();
-});
+}
+$('primary-action').addEventListener('click',primaryAction);
+$('result-action').addEventListener('click',primaryAction);
 $('ready').addEventListener('click',()=>{passing=false;$('pass-dialog').close();render();});
 $('pass-dialog').addEventListener('cancel',event=>event.preventDefault());
 for(const [button,dialog]of [['open-menu','menu-dialog'],['open-rules','rules-dialog'],['open-lab','lab-dialog'],['open-room','lobby-dialog']])$(button).addEventListener('click',()=>showDialog(dialog));
 $('open-setup').addEventListener('click',newMatch);
 $('open-profile').addEventListener('click',()=>{$('profile-name').value=getPlayerName();showDialog('profile-dialog')});
 $('save-profile').addEventListener('click',()=>{const name=$('profile-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('profile-status').textContent='Name saved as '+name;});
-let lbRequest=0;function loadLeaderboard(period='all'){
-  const revision=++lbRequest,status=$('lb-status'),ranking=$('lb-ranking');
+let lbRequest=0,lbPeriod='all';
+function loadLeaderboard(period='all'){
+  lbPeriod=period;
+  const revision=++lbRequest,status=$('lb-status'),ranking=$('lb-ranking'),showBots=$('lb-show-bots')?.checked;
   status.hidden=false;status.textContent='Loading standings…';
-  fetch('/api/leaderboard?limit=50&period='+period,{cache:'no-store',signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{
+  fetch('/api/leaderboard?limit=50&period='+period+(showBots?'&showBots=1':''),{cache:'no-store',signal:AbortSignal.timeout(9000)}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(d=>{
     if(revision!==lbRequest)return;if(!d.ok)throw new Error();ranking.replaceChildren();
     if(!d.players.length){status.textContent='No finished matches in this period. Play a round to get on the board.';return;}
     status.hidden=true;
     d.players.forEach((p,i)=>{const row=document.createElement('li'),top=document.createElement('div');top.className='rank-top';
       for(const[cls,text]of[['rank-number',i+1],['rank-name',p.name],['wins',`${p.wins} ${p.wins===1?'win':'wins'}`]]){const span=document.createElement('span');span.className=cls;span.textContent=text;top.append(span);}
       const stats=document.createElement('p');stats.className='rank-stats';
-      for(const[val,lbl]of[[p.win_rate+'%','win rate'],[p.losses,'losses'],[p.matches_played,p.matches_played===1?'match':'matches'],[p.avg_turns,'avg turns'],[p.best_score,'best score']]){const span=document.createElement('span'),b=document.createElement('b');b.textContent=val;span.append(b,' '+lbl);stats.append(span);}
+      for(const[val,lbl]of[[p.rating??'—','rating'],[p.win_rate+'%','win rate'],[p.losses,'losses'],[p.matches_played,p.matches_played===1?'match':'matches'],[p.avg_turns,'avg turns'],[p.best_score,'best score']]){const span=document.createElement('span'),b=document.createElement('b');b.textContent=val;span.append(b,' '+lbl);stats.append(span);}
       row.append(top,stats);ranking.append(row);});
   }).catch(()=>{if(revision!==lbRequest)return;ranking.replaceChildren();status.textContent="Standings couldn't load.";});
   const badges=$('lb-badges'),bmsg=$('lb-badge-status');
@@ -394,18 +449,21 @@ let lbRequest=0;function loadLeaderboard(period='all'){
   }).catch(()=>{bmsg.textContent="Badges couldn't load.";});
 }
 for(const btn of document.querySelectorAll('#leaderboard-dialog [data-period]'))btn.addEventListener('click',()=>{document.querySelectorAll('#leaderboard-dialog [data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));loadLeaderboard(btn.dataset.period);});
+$('lb-show-bots')?.addEventListener('change',()=>loadLeaderboard(lbPeriod));
 $('open-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('open-leaderboard-menu').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('name-continue').addEventListener('click',()=>{const name=$('start-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('name-step').hidden=true;$('mode-step').hidden=false;$('start-player-name').textContent=name;});
 $('start-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('name-continue').click();}});
-for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{hideStartScreen();const mode=btn.dataset.mode;if(mode==='remote'){$('mode').value='remote';modeChanged();showDialog('setup-dialog');}else if(mode==='human'){$('mode').value='human';modeChanged();showDialog('setup-dialog');}else{$('mode').value=mode;modeChanged();showDialog('setup-dialog');}});
+for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{$('mode').value=btn.dataset.mode;$('player-name').value=getPlayerName();modeChanged();showDialog('setup-dialog');});
 $('start-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('change-name').addEventListener('click',()=>{$('name-step').hidden=false;$('mode-step').hidden=true;$('start-name').value=getPlayerName();$('start-name').focus();$('start-name').select();});
 for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>$(button.dataset.close).close());
+$('setup-back').addEventListener('click',()=>$('setup-dialog').close());
+$('setup-dialog').addEventListener('close',()=>{if(!gameActive)showStartScreen();});
 $('toggle-sound').addEventListener('click',()=>{sound=!sound;try{localStorage.setItem('kaputt-sound',sound?'on':'off');}catch{}render();});
 $('toggle-motion').addEventListener('click',()=>{toggleMotion();scene?.finish();render();});
 $('mode').addEventListener('change',modeChanged);
-$('setup-form').addEventListener('submit',event=>{event.preventDefault();if($('mode').value==='remote')return roomEntry('join');if($('setup-form').reportValidity())startMatch(settings());});
+$('setup-form').addEventListener('submit',event=>{event.preventDefault();if($('mode').value==='remote')return roomEntry('create');if($('setup-form').reportValidity())startMatch(settings());});
 $('create-room').addEventListener('click',()=>roomEntry('create'));$('join-room-btn').addEventListener('click',()=>roomEntry('join'));
 $('join-code').addEventListener('input',()=>{$('join-code').value=$('join-code').value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
 $('resume-room').addEventListener('click',()=>{remote.resume(remote.saved);$('room-status').textContent='Resuming your room…';});
@@ -418,7 +476,7 @@ $('share-room').addEventListener('click',async()=>{
 $('leave-room').addEventListener('click',()=>showDialog('leave-dialog'));
 $('confirm-leave').addEventListener('click',async()=>{
   $('confirm-leave').disabled=true;$('leave-status').textContent='Leaving…';
-  try{const room=await remote.send('leave');if(!room)throw new Error('Wait for the pending move, then retry.');startMatch({...setup,mode:'human'});showDialog('setup-dialog');modeChanged();$('leave-status').textContent='';}
+  try{const room=await remote.send('leave');if(!room)throw new Error('Wait for the pending move, then retry.');startMatch({...setup,mode:'human'});showStartScreen();$('leave-status').textContent='';}
   catch(error){$('leave-status').textContent=error.message;}finally{$('confirm-leave').disabled=false;}
 });
 $('export-legacy').addEventListener('click',async()=>{
@@ -434,6 +492,6 @@ $('game').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null
 displayedValues=publicValues();render();modeChanged();
 const invite=new URLSearchParams(location.search).get('room');
 if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
-if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();hideStartScreen();}else if(invite){hideStartScreen();}else{showStartScreen();}
+if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();hideStartScreen();}else{showStartScreen();}
 retryUploads();
 import('./dice-scene.js').then(({DiceScene})=>{scene=new DiceScene($('dice-renderer'));const canvas=scene.renderer.domElement;const shell=$('game');shell.prepend(canvas);scene.container=shell;scene.resize();new ResizeObserver(()=>scene.resize()).observe(shell);$('dice-stage').classList.add('has-webgl');scene.setValues(displayedValues);}).catch(error=>console.warn('3D dice unavailable; accessible dice enabled.',error.message));

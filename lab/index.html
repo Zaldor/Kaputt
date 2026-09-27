@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
-<head>  <meta charset="utf-8">  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">  <meta name="theme-color" content="#11265d">  <meta name="description" content="Roll two dice. Reveal one. Make your call. KAPUTT! is a head-to-head game of risk, nerve and strategy.">  <title>KAPUTT! — Roll. Reveal. Rival.</title>  <link rel="icon" type="image/svg+xml" href="assets/icons/dice-five-fill.svg">  <link rel="preload" href="assets/fonts/barlow-800.ttf" as="font" type="font/ttf" crossorigin>  <link rel="stylesheet" href="game.css">
+<head>  <meta charset="utf-8">  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">  <meta name="theme-color" content="#11265d">  <meta name="description" content="Roll two dice. Reveal one. Make your call. KAPUTT! is a head-to-head game of risk, nerve and strategy.">  <title>KAPUTT! — Roll. Reveal. Rival.</title>  <link rel="icon" type="image/svg+xml" href="assets/icons/dice-five-fill.svg">  <link rel="manifest" href="manifest.webmanifest">  <link rel="apple-touch-icon" href="apple-touch-icon.png">  <meta name="apple-mobile-web-app-capable" content="yes">  <meta name="mobile-web-app-capable" content="yes">  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">  <meta property="og:type" content="website">  <meta property="og:title" content="KAPUTT! — Roll. Reveal. Rival.">  <meta property="og:description" content="Roll two dice. Reveal one. Make your call. KAPUTT! is a head-to-head game of risk, nerve and strategy.">  <meta property="og:url" content="https://kaputt-lab.crafthead.workers.dev/">  <meta property="og:image" content="https://kaputt-lab.crafthead.workers.dev/icon-512.png">  <meta name="twitter:card" content="summary">  <meta name="twitter:title" content="KAPUTT! — Roll. Reveal. Rival.">  <meta name="twitter:description" content="Roll two dice. Reveal one. Make your call. KAPUTT! is a head-to-head game of risk, nerve and strategy.">  <meta name="twitter:image" content="https://kaputt-lab.crafthead.workers.dev/icon-512.png">  <link rel="preload" href="assets/fonts/barlow-800.ttf" as="font" type="font/ttf" crossorigin>  <link rel="stylesheet" href="game.css">
 </head>
-<body>  <main class="game-shell" id="game" aria-label="KAPUTT game">    <section id="start-screen" aria-label="Start screen">
+<body style="background:#11265d">  <main class="game-shell" id="game" aria-label="KAPUTT game">    <section id="start-screen" aria-label="Start screen">
 <img class="start-logo" src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
 <p class="start-tagline">Roll. Reveal. Rival.</p>
 <div id="name-step">
@@ -56,9 +56,16 @@
 </button>      </div>      <div class="turn-message" aria-live="polite" aria-atomic="true">
 <h2 id="turn-title">READY TO ROLL?</h2>
 <p id="turn-detail">Two dice. One decision.</p>
-</div>      <div class="event-popup" id="event-popup" aria-hidden="true">
-<span id="event-popup-text">
-</span>
+</div>      <div class="result-popup" id="result-popup" hidden>
+<div class="result-card" role="group" aria-label="Turn result">
+<p class="result-headline" id="result-headline"></p>
+<p class="result-math" id="result-math"></p>
+<div class="result-badges" id="result-badges" hidden></div>
+<button class="game-button primary-action result-action" id="result-action">
+<span id="result-action-label">NEXT TURN</span>
+<img src="assets/icons/arrow-right-bold.svg" alt="">
+</button>
+</div>
 </div>      <div class="actions-zone">        <button id="primary-action" class="game-button primary-action">
 <span id="primary-label">ROLL THE DICE</span>
 <img src="assets/icons/arrow-right-bold.svg" alt="">
@@ -103,7 +110,7 @@
 <img src="assets/icons/chart-bar-bold.svg" alt="">Leaderboard<span>→</span>
 </button>    <button class="sheet-link" id="export">
 <img src="assets/icons/download-simple-bold.svg" alt="">Export match JSON</button>    <p class="sheet-note">K3-E1 · Extremes ruleset</p>  </dialog>  <dialog id="setup-dialog" class="sheet">    <div class="sheet-heading">
-<h2>NEW MATCH</h2>
+<h2 id="setup-title">NEW MATCH</h2>
 <button class="icon-button" data-close="setup-dialog" aria-label="Close new match">
 <img src="assets/icons/x-bold.svg" alt="">
 </button>
@@ -111,7 +118,7 @@
 </label>
 <label id="p2-name-label">Player 2 name<input id="player2-name" name="player2Name" type="text" maxlength="16" value="Player 2" placeholder="Player 2 name">
 </label>
-<label>Opponent<select id="mode" name="mode">
+<label id="mode-label">Opponent<select id="mode" name="mode">
 <option value="human">A friend (pass & play)</option>
 <option value="random">Coinflip</option>
 <option value="aggressive">Berserker</option>
@@ -152,7 +159,10 @@
   <button type="button" class="text-button" id="export-legacy" hidden>Download previous room history</button>
 </div>
 <p class="sheet-note" id="setup-note">Roll. Reveal either die. Make your call.</p>
+<div class="setup-footer">
 <button type="submit" id="start-local" class="game-button sheet-primary">LET’S PLAY</button>
+<button type="button" class="text-button setup-back" id="setup-back">Back</button>
+</div>
 </form>  </dialog>  <dialog id="rules-dialog" class="sheet">    <div class="sheet-heading">
 <h2>HOW TO PLAY</h2>
 <button class="icon-button" data-close="rules-dialog" aria-label="Close rules">
@@ -218,6 +228,7 @@
 <dialog id="leaderboard-dialog" class="sheet wide-sheet">
 <div class="sheet-heading"><h2>LEADERBOARD</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard"><img src="assets/icons/x-bold.svg" alt=""></button></div>
 <div class="periods" role="group" aria-label="Leaderboard period"><button data-period="all" aria-pressed="true">All time</button><button data-period="month" aria-pressed="false">Month</button><button data-period="week" aria-pressed="false">Week</button><button data-period="today" aria-pressed="false">Today</button></div>
+<p class="sheet-note"><label><input type="checkbox" id="lb-show-bots"> Show bots</label></p>
 <p id="lb-status" class="sheet-note" role="status">Loading standings…</p>
 <ol id="lb-ranking" class="ranking" aria-label="Player rankings"></ol>
 <h3 id="lb-badge-heading">BADGES</h3>
@@ -229,6 +240,10 @@
 </script>  <script src="bots.js">
 </script>  <script src="llm.js">
 </script>  <script type="module" src="game.js">
-</script>
+</script>  <script>
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))) {
+    addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+  }
+  </script>
 </body>
 </html>

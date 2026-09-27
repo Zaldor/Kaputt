@@ -8,6 +8,12 @@ export function playerIdentity() {
   if(!id || !/^[a-zA-Z0-9-]{16,80}$/.test(id)){id=randomId();try{sessionStorage.setItem('kaputt-player-uuid',id);}catch{}}
   return id;
 }
+// One stable identity per browser (not per tab) so match attribution and the leaderboard follow the player.
+export function leaderboardId() {
+  let id;try{id=localStorage.getItem('kaputt-leaderboard-id');}catch{}
+  if(!/^[0-9a-f]{64}$/i.test(id||'')){id=randomId();try{localStorage.setItem('kaputt-leaderboard-id',id);}catch{}}
+  return id;
+}
 export class RemoteClient {
   constructor({onState,onConnection}) {
     this.onState=onState;this.onConnection=onConnection;this.epoch=0;this.room=null;this.session=null;
@@ -52,11 +58,11 @@ export class RemoteClient {
     const {room}=await this.request('/api/rooms',this.creation);
     this.attach({code:room.code,token:this.creation.sessionToken,name:config.hostName},room);this.creation=null;return room;
   }
-  async join(code,name) {
+  async join(code,name,playerId=playerIdentity()) {
     if(!/^[A-Z0-9]{4}$/.test(code))throw new Error('Enter the four-character room code.');
     this.joining ||= {code,sessionToken:randomId()};
     if(this.joining.code!==code)this.joining={code,sessionToken:randomId()};
-    const {room}=await this.request(`/api/rooms/${code}/join`,{guestName:name,playerId:playerIdentity(),sessionToken:this.joining.sessionToken});
+    const {room}=await this.request(`/api/rooms/${code}/join`,{guestName:name,playerId,sessionToken:this.joining.sessionToken});
     this.attach({code,token:this.joining.sessionToken,name},room);this.joining=null;return room;
   }
   resume(session=this.current||this.saved) {if(session)this.attach(session);}
