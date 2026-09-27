@@ -142,3 +142,65 @@ test('period standings, per-player identity, and badges preserve the newest feat
   assert.equal((await api('/api/leaderboard?period=invalid')).status,400);
   const r=await api('/api/badges');assert.equal(r.status,200);assert.ok(r.badges.some(b=>b.id==='berserker'));assert.ok(r.badges.every(b=>!['P1','P2'].includes(b.player)));
 });
+test('rematch re-randomizes the starting player',async()=>{
+  const p=await pair({target:1});
+  const seen=new Set();
+  for(let n=0;n<20;n++){
+    await act(p,'roll');await act(p,'reveal',{dieIndex:0});await act(p,'choose',{choice:'defense'});
+    const {room:end}=await act(p,'resolve');assert.equal(end.status,'finished');
+    const before=end.state.matchId;
+    let room=end;
+    for(const i of [0,1]){
+      const r=await api(`/api/rooms/${p.key}/action`,{action:'rematch',requestId:crypto.randomUUID(),version:room.version},p.tokens[i]);
+      assert.equal(r.status,200);room=r.room;
+    }
+    assert.equal(room.status,'playing');assert.equal(room.state.phase,'idle');assert.equal(room.state.turn,0);
+    assert.notEqual(room.state.matchId,before);assert.ok(room.state.currentPlayer===0||room.state.currentPlayer===1);
+    seen.add(room.state.currentPlayer);
+  }
+  assert.ok(seen.has(0)&&seen.has(1));
+});
+test('leaderboard rates Elo, hides bots (incl. legacy labels) unless showBots=1, and always excludes test matches',async()=>{
+  const mk=(aId,aName,bId,bName,winner,extra={})=>({id:crypto.randomUUID(),playerA:aName,playerB:bName,playerAId:aId,playerBId:bId,winner,
+    scoreA:winner==='P1'?10:1,scoreB:winner==='P1'?1:10,
+    history:[{turn:1,player:0,visibleDie:2,hiddenDie:3,choice:'attack',points:6,ntbBefore:1,ntbAfter:6}],...extra});
+  const post=async(...args)=>assert.equal((await api('/api/matches',mk(...args))).status,201);
+  await post('lb-duel-a','LB Duel A','lb-duel-b','LB Duel B','P1');
+  await post('bot-lb-razz','LB Razz Bot','lb-human-bot','LB Human Bot','P1',{scoreA:5000,scoreB:1});
+  await post('lb-loses-bot','LB Loses Bot','bot-lb-dazz','LB Dazz Bot','P2',{scoreB:4000});
+  await post('bot-lb-vet','LB Vet Bot','lb-sac-one','LB Sac One','P1');
+  await post('bot-lb-vet','LB Vet Bot','lb-sac-two','LB Sac Two','P1');
+  await post('lb-real-a','LB Real A','lb-real-b','LB Real B','P1');
+  await post('lb-real-a','LB Real A','lb-test-b','LB Test B','P1',{source:'test',scoreA:9000,scoreB:1});
+  await post('lb-test-solo','LB Test Solo','lb-test-solo-2','LB Test Solo Two','P1',{source:'test',scoreA:5000,scoreB:1});
+  await post('lb-legacy-a','LB Legacy A',undefined,'Grandmaster','P1',{scoreB:7000});
+  const def=await api('/api/leaderboard?limit=100'),all=await api('/api/leaderboard?limit=100&showBots=1');
+  const at=(list,id)=>list.players.find(p=>p.identity===id);
+  assert.ok(def.players.every(p=>!p.identity.startsWith('bot-')));
+  assert.equal(at(def,'bot-lb-razz'),undefined);
+  for(const id of ['bot-lb-razz','bot-lb-dazz','bot-lb-vet']){
+    const bot=at(all,id);assert.ok(bot,id);assert.ok(Number.isInteger(bot.rating));assert.ok(bot.rating>1200);
+  }
+  const duelA=at(def,'lb-duel-a'),duelB=at(def,'lb-duel-b');
+  assert.equal(duelA.rating,1216);assert.equal(duelB.rating,1184);
+  assert.equal(at(def,'lb-human-bot').rating,1184);
+  assert.equal(at(def,'lb-loses-bot').rating,1184);
+  assert.equal(at(def,'lb-sac-one').rating,1184);
+  const real=at(def,'lb-real-a');
+  assert.equal(real.name,'LB Real A');assert.equal(real.wins,1);assert.equal(real.losses,0);
+  assert.equal(real.matches_played,1);assert.equal(real.rating,1216);assert.equal(real.best_score,10);assert.equal(real.win_rate,100);
+  for(const id of ['lb-test-b','lb-test-solo','lb-test-solo-2']){assert.equal(at(def,id),undefined);assert.equal(at(all,id),undefined);}
+  assert.equal(at(def,'name:Grandmaster'),undefined);
+  assert.equal(at(def,'bot-strategist3'),undefined);
+  assert.equal(at(all,'name:Grandmaster'),undefined);
+  const legacyBot=at(all,'bot-strategist3');
+  assert.ok(legacyBot);assert.equal(legacyBot.name,'Grandmaster');
+  assert.equal(legacyBot.rating,1184);assert.equal(legacyBot.wins,0);assert.equal(legacyBot.losses,1);
+  assert.equal(at(def,'lb-legacy-a').rating,1216);
+  for(const k of ['identity','name','wins','losses','matches_played','total_points','best_score','avg_turns','avg_score','win_rate','rating'])assert.ok(k in real,k);
+  const badges=await api('/api/badges');assert.equal(badges.status,200);assert.ok(badges.badges.length>0);
+  assert.ok(badges.badges.some(b=>b.id==='high_scorer'));
+  assert.ok(badges.badges.every(b=>!b.identity.startsWith('bot-')));
+  assert.ok(badges.badges.every(b=>!b.identity.startsWith('name:Grandmaster')));
+  assert.ok(badges.badges.every(b=>!['LB Test Solo','LB Test Solo Two','LB Test B','Grandmaster'].includes(b.player)));
+});

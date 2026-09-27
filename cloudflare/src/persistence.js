@@ -68,17 +68,19 @@ export async function saveMatch(db, body) {
 // One common dataset keeps all-time, period views, and badges consistent.
 // Old rows remain untouched. A recorded lastResult winner repairs the previous
 // client's wrong top-level winner on a Kaputt-limit loss when reading standings.
+// Test uploads (source='test') never reach standings, badges, or Elo. `seq`
+// preserves insertion order so same-timestamp rows stay chronological.
 const completed = `WITH completed AS (
  SELECT id,player_a a,player_b b,
    COALESCE(json_extract(payload_json,'$.playerAId'),'name:'||player_a) aid,
    COALESCE(json_extract(payload_json,'$.playerBId'),'name:'||player_b) bid,
-   score_a sa,score_b sb,winner,turns,created_at at
- FROM matches WHERE winner IN ('P1','P2')
+   score_a sa,score_b sb,winner,turns,created_at at,rowid seq
+ FROM matches WHERE winner IN ('P1','P2') AND source<>'test'
  UNION ALL
  SELECT 'room-'||code,host_name,guest_name,COALESCE(host_uuid,'name:'||host_name),COALESCE(guest_uuid,'name:'||guest_name),
    json_extract(current_state_json,'$.players[0].score'),json_extract(current_state_json,'$.players[1].score'),
    CASE COALESCE(json_extract(current_state_json,'$.lastResult.winner'),json_extract(current_state_json,'$.winner')) WHEN 0 THEN 'P1' WHEN 1 THEN 'P2' END,
-   json_extract(current_state_json,'$.turn'),last_updated
+   json_extract(current_state_json,'$.turn'),last_updated,rowid
  FROM rooms WHERE protocol=1 AND status='finished' AND match_id IS NULL AND json_valid(current_state_json)
    AND COALESCE(json_extract(current_state_json,'$.lastResult.winner'),json_extract(current_state_json,'$.winner')) IN (0,1)
 ), results AS (
@@ -86,32 +88,69 @@ const completed = `WITH completed AS (
  UNION ALL SELECT id,bid,b,sb,winner='P2',turns,at FROM completed
 )`;
 const periods = {all:'1',today:"at>=date('now','start of day')",week:"at>=date('now','-6 days','weekday 1')",month:"at>=date('now','start of month')"};
-export async function leaderboard(db,limit=25,period='all') {
+// Matches predating stable playerBIds stored bot labels under 'name:' identities; canonicalize them to bot ids at read time.
+const legacyBots=new Map([
+ ['Coinflip','bot-random'],['Berserker','bot-aggressive'],['Aggressive','bot-aggressive'],
+ ['Guardian','bot-safe'],['Calculator','bot-ev'],['Tactician','bot-state'],
+ ['Oracle','bot-strategist'],['Sage','bot-strategist2'],
+ ['Grandmaster','bot-strategist3'],['Dynamic Pressure','bot-strategist3'],['Bot · Strategist v3 · Dynamic Pressure','bot-strategist3'],
+ ['LLM · Naive','bot-llm_naive'],['LLM · Informed','bot-llm_informed'],['Informed','bot-llm_informed'],
+]);
+const botLabels={
+ 'bot-random':'Coinflip','bot-aggressive':'Berserker','bot-safe':'Guardian','bot-ev':'Calculator',
+ 'bot-state':'Tactician','bot-strategist':'Oracle','bot-strategist2':'Sage','bot-strategist3':'Grandmaster',
+ 'bot-llm_naive':'LLM · Naive','bot-llm_informed':'LLM · Informed',
+};
+const canonical=(id,name)=>id.startsWith('name:')&&legacyBots.has(name)?[legacyBots.get(name),botLabels[legacyBots.get(name)]]:[id,name];
+const legacyBotFilter=`NOT(identity LIKE 'name:%' AND name IN (${[...legacyBots.keys()].map(n=>`'${n.replaceAll("'","''")}'`).join(',')}))`;
+export async function leaderboard(db,limit=25,period='all',showBots=false) {
  if(!periods[period])throw new ApiError('Choose all, today, week, or month.');
  try {
-  const rows=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,SUM(1-won) losses,COUNT(*) matches_played,
-    SUM(score) total_points,MAX(score) best_score,ROUND(AVG(turns),1) avg_turns,ROUND(AVG(score),1) avg_score,
-    ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results WHERE ${periods[period]}
-    GROUP BY identity ORDER BY wins DESC,win_rate DESC,name LIMIT ?`).bind(limit).all();
-  return rows.results;
+  const rows=await db.prepare(`${completed} SELECT aid,bid,a,b,sa,sb,winner,turns FROM completed WHERE ${periods[period]} ORDER BY at,seq`).all();
+  const table=new Map(),elo=new Map();
+  for(const r of rows.results){
+   const [aid,aname]=canonical(r.aid,r.a),[bid,bname]=canonical(r.bid,r.b);
+   for(const [id,name,score,won] of [[aid,aname,r.sa,r.winner==='P1'],[bid,bname,r.sb,r.winner==='P2']]){
+    let p=table.get(id);
+    if(!p)table.set(id,p={identity:id,name,wins:0,losses:0,matches_played:0,total_points:0,best_score:null,turns_sum:0,turns_n:0,scores_n:0});
+    else if(name>p.name)p.name=name;
+    p.matches_played++; if(won)p.wins++; else p.losses++;
+    if(score!==null){p.total_points+=score;p.scores_n++;if(p.best_score===null||score>p.best_score)p.best_score=score;}
+    if(r.turns!==null){p.turns_sum+=r.turns;p.turns_n++;}
+   }
+   if(aid!==bid){
+    const ra=elo.get(aid)??1200,rb=elo.get(bid)??1200;
+    const ea=1/(1+10**((rb-ra)/400)),s=r.winner==='P1'?1:0;
+    elo.set(aid,ra+32*(s-ea));
+    elo.set(bid,rb+32*((1-s)-(1-ea)));
+   }
+  }
+  const round=v=>Math.round(v*10)/10;
+  return [...table.values()].map(p=>({
+   identity:p.identity,name:p.name,wins:p.wins,losses:p.losses,matches_played:p.matches_played,
+   total_points:p.scores_n?p.total_points:null,best_score:p.best_score,
+   avg_turns:p.turns_n?round(p.turns_sum/p.turns_n):null,avg_score:p.scores_n?round(p.total_points/p.scores_n):null,
+   win_rate:round(100*p.wins/p.matches_played),rating:Math.round(elo.get(p.identity)??1200)
+  })).filter(p=>showBots||!p.identity.startsWith('bot-'))
+   .sort((x,y)=>y.rating-x.rating||y.wins-x.wins||(x.name<y.name?-1:x.name>y.name?1:0)).slice(0,limit);
  } catch { return []; }
 }
 export async function badges(db) {
  try {
-  const summary=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,COUNT(*) matches_played,
+   const summary=await db.prepare(`${completed} SELECT identity,MAX(name) name,SUM(won) wins,COUNT(*) matches_played,
     MIN(CASE WHEN won THEN turns END) fastest,MAX(turns) longest,MAX(score) best_score,
-    ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results GROUP BY identity`).all();
+    ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results WHERE identity NOT LIKE 'bot-%' AND ${legacyBotFilter} GROUP BY identity`).all();
   const turns=await db.prepare(`WITH played AS (
     SELECT CASE t.actor WHEN 'P1' THEN COALESCE(json_extract(m.payload_json,'$.playerAId'),'name:'||m.player_a) WHEN 'P2' THEN COALESCE(json_extract(m.payload_json,'$.playerBId'),'name:'||m.player_b) ELSE 'name:'||t.actor END identity,
       CASE t.actor WHEN 'P1' THEN m.player_a WHEN 'P2' THEN m.player_b ELSE t.actor END name,
       t.choice,t.extreme,t.kaputt,t.strategic_hold
-    FROM turns t JOIN matches m ON m.id=t.match_id
+    FROM turns t JOIN matches m ON m.id=t.match_id WHERE m.source<>'test'
     UNION ALL
     SELECT CASE json_extract(j.value,'$.player') WHEN 0 THEN COALESCE(r.host_uuid,'name:'||r.host_name) ELSE COALESCE(r.guest_uuid,'name:'||r.guest_name) END,
       CASE json_extract(j.value,'$.player') WHEN 0 THEN r.host_name ELSE r.guest_name END,
       COALESCE(json_extract(j.value,'$.choice'),json_extract(j.value,'$.action')),json_extract(j.value,'$.extreme'),json_extract(j.value,'$.kaputt'),json_extract(j.value,'$.kaputt')
     FROM rooms r,json_each(r.current_state_json,'$.history') j WHERE r.protocol=1 AND r.status='finished' AND r.match_id IS NULL AND json_valid(r.current_state_json)
-  ) SELECT identity,MAX(name) name,SUM(choice='attack') attacks,SUM(choice='defense') defenses,SUM(extreme) extremes,SUM(kaputt) kaputts,SUM(strategic_hold) holds FROM played GROUP BY identity`).all();
+  ) SELECT identity,MAX(name) name,SUM(choice='attack') attacks,SUM(choice='defense') defenses,SUM(extreme) extremes,SUM(kaputt) kaputts,SUM(strategic_hold) holds FROM played WHERE identity NOT LIKE 'bot-%' AND ${legacyBotFilter} GROUP BY identity`).all();
   const result=[];
   const award=(id,label,desc,rows,metric,unit,min=false)=>{
     const eligible=rows.filter(r=>r[metric]!==null&&r[metric]>0).sort((a,b)=>(min?a[metric]-b[metric]:b[metric]-a[metric])||a.name.localeCompare(b.name));

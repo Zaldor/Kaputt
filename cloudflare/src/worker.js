@@ -51,7 +51,7 @@ export default {
       if(path==='/api/badges')return json({ok:true,badges:await badges(env.DB)});
       if(path==='/api/leaderboard') {
         const limit=integer(Number(u.searchParams.get('limit')||25),25,1,100,'limit');
-        return json({ok:true,players:await leaderboard(env.DB,limit,u.searchParams.get('period')||'all')});
+        return json({ok:true,players:await leaderboard(env.DB,limit,u.searchParams.get('period')||'all',u.searchParams.get('showBots')==='1')});
       }
       if(path.startsWith('/api/')) return json({ok:false,error:'Endpoint not found.'},404);
       const response=await env.ASSETS.fetch(request);
