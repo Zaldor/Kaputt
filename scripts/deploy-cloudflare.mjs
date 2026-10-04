@@ -30,14 +30,16 @@ try{
  writeFileSync(prefix+'-time-travel.json',run(['d1','time-travel','info',db,'--json'],{capture:true}),{mode:0o600});
  run(['d1','export',db,'--remote','--output',prefix+'.sql']);
  if(statSync(prefix+'.sql').size<100)throw new Error('Database export is unexpectedly empty. Deployment stopped.');
- for(const migration of ['0003_add_player_uuid.sql','0004_add_room_uuids.sql','0005_remote_protocol.sql']){
+ for(const migration of ['0003_add_player_uuid.sql','0004_add_room_uuids.sql','0005_remote_protocol.sql','0006_auth.sql']){
    const sql=readFileSync(`cloudflare/migrations/${migration}`,'utf8').replace(/--[^\n]*/g,'');
    if(/\b(DROP|DELETE|TRUNCATE|REPLACE)\b/i.test(sql))throw new Error('A migration contains a destructive operation. Deployment stopped.');
  }
  run(['d1','migrations','apply',db,'--remote']);
  const after=counts();for(const old of before)if((after.find(r=>r.name===old.name)?.count??-1)<old.count)throw new Error(`Row count decreased for ${old.name}. Worker deployment stopped. Review the private backup.`);
  run(['deploy']);
- const response=await fetch('https://kaputt-lab.crafthead.workers.dev/api/health',{cache:'no-store'}),health=await response.json();
- if(!response.ok||health.remoteProtocol!==2||!health.db)throw new Error('Post-deploy health verification failed. Inspect the Worker deployment before continuing.');
+ for(const origin of ['https://kaputt-lab.crafthead.workers.dev','https://play-kaputt.juzemaru.com']){
+   const response=await fetch(origin+'/api/health',{cache:'no-store'}),health=await response.json();
+   if(!response.ok||health.remoteProtocol!==2||!health.db)throw new Error(`Post-deploy health verification failed for ${origin}. Inspect the Worker deployment before continuing.`);
+ }
  console.log('Deployment healthy. Existing table row counts preserved. Private backup: '+prefix+'.sql');
 }catch(error){console.error(error.message);process.exitCode=1;}

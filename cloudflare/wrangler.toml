@@ -1,6 +1,11 @@
 name = "kaputt-lab"
 main = "src/worker.js"
 compatibility_date = "2026-09-18"
+workers_dev = true
+
+[[routes]]
+pattern = "play-kaputt.juzemaru.com"
+custom_domain = true
 
 [assets]
 directory = "../lab"
@@ -11,3 +16,6 @@ binding = "DB"
 database_name = "kaputt-lab"
 database_id = "986e5b8a-e0e5-43cd-8db3-48e629fe398a"
 migrations_dir = "migrations"
+
+[vars]
+AUTH_FROM_EMAIL = "play-kaputt@no-reply.juzemaru.com"
