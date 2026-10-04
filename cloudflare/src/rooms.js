@@ -1,7 +1,6 @@
 import engine from '../../lab/engine.js';
-import { ApiError, integer, playerName, canonicalMatch, matchStatements } from './persistence.js';
+import { ApiError, integer, playerName, canonicalMatch, matchStatements, hash } from './persistence.js';
 
-const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const randomInt = max => {
   const x = new Uint32Array(1), limit = Math.floor(0x100000000/max)*max;
   do { crypto.getRandomValues(x); } while (x[0]>=limit);
@@ -47,10 +46,13 @@ function requireModern(room) {
   if (!room) throw new ApiError('Room not found. Check the four-character code.',404);
   if (room.protocol!==2) throw new ApiError('This room uses the previous game version. Its history is preserved; create a new room to play securely.',426);
 }
-export async function createRoom(db,b) {
+export async function createRoom(db,b,userId=null) {
   const tokenHash=await hash(credential(b.sessionToken));
-  const existing=await db.prepare('SELECT r.*,s.player_index FROM rooms r JOIN room_seats s ON s.room_code=r.code WHERE s.token_hash=?').bind(tokenHash).first();
-  if (existing) return publicRoom(db,existing,existing.player_index);
+  const existing=await db.prepare('SELECT r.*,s.player_index,s.user_id seat_user_id FROM rooms r JOIN room_seats s ON s.room_code=r.code WHERE s.token_hash=?').bind(tokenHash).first();
+  if (existing) {
+    if(userId&&!existing.seat_user_id)await db.prepare('UPDATE room_seats SET user_id=? WHERE room_code=? AND player_index=? AND user_id IS NULL').bind(userId,existing.code,existing.player_index).run();
+    return publicRoom(db,existing,existing.player_index);
+  }
   const name=playerName(b.hostName,'Host');
   const target=integer(b.target,100,1,9999,'score target'), kaputt=integer(b.kaputtLimit,5,1,20,'Kaputt limit'), ntb=integer(b.startingNtb,1,0,99,'starting target');
   for(let attempt=0;attempt<8;attempt++) {
@@ -59,7 +61,7 @@ export async function createRoom(db,b) {
     try {
       await db.batch([
         db.prepare("INSERT INTO rooms(code,host_name,host_uuid,target,kaputt_limit,starting_ntb,status,protocol,version) VALUES(?,?,?,?,?,?,'waiting',2,0)").bind(key,name,identity(b.playerId),target,kaputt,ntb),
-        db.prepare('INSERT INTO room_seats(room_code,player_index,token_hash) VALUES(?,0,?)').bind(key,tokenHash),
+        db.prepare('INSERT INTO room_seats(room_code,player_index,token_hash,user_id) VALUES(?,0,?,?)').bind(key,tokenHash,userId),
       ]);
       return publicRoom(db,await read(db,key),0);
     } catch(error) {
@@ -70,11 +72,14 @@ export async function createRoom(db,b) {
   }
   throw new ApiError('Could not create a room. Please try again.',503);
 }
-export async function joinRoom(db,key,b) {
+export async function joinRoom(db,key,b,userId=null) {
   const room=await read(db,key); requireModern(room);
   const tokenHash=await hash(credential(b.sessionToken));
-  const prior=await db.prepare('SELECT player_index FROM room_seats WHERE room_code=? AND token_hash=?').bind(key,tokenHash).first();
-  if (prior) return publicRoom(db,room,prior.player_index);
+  const prior=await db.prepare('SELECT player_index,user_id FROM room_seats WHERE room_code=? AND token_hash=?').bind(key,tokenHash).first();
+  if (prior) {
+    if(userId&&!prior.user_id)await db.prepare('UPDATE room_seats SET user_id=? WHERE room_code=? AND player_index=? AND user_id IS NULL').bind(userId,key,prior.player_index).run();
+    return publicRoom(db,room,prior.player_index);
+  }
   if (room.status!=='waiting') throw new ApiError('This room already has two players.',409);
   const name=playerName(b.guestName,'Guest');
   if (name.toLocaleLowerCase()===room.host_name.toLocaleLowerCase()) throw new ApiError('Choose a different name from your opponent.');
@@ -83,7 +88,7 @@ export async function joinRoom(db,key,b) {
   const result=await db.batch([
     db.prepare("UPDATE rooms SET guest_name=?,guest_uuid=?,status='playing',current_state_json=?,version=version+1,last_updated=CURRENT_TIMESTAMP WHERE code=? AND status='waiting' AND version=?")
       .bind(name,guestId,JSON.stringify(state),key,room.version),
-    db.prepare('INSERT INTO room_seats(room_code,player_index,token_hash) SELECT ?,1,? WHERE changes()=1').bind(key,tokenHash),
+    db.prepare('INSERT INTO room_seats(room_code,player_index,token_hash,user_id) SELECT ?,1,?,? WHERE changes()=1').bind(key,tokenHash,userId),
   ]);
   if (!result[0].meta.changes) {
     const own=await db.prepare('SELECT player_index FROM room_seats WHERE room_code=? AND token_hash=?').bind(key,tokenHash).first();
@@ -117,10 +122,11 @@ function turnResult(state,index) {
   state.history.push(event); state.lastResult=event; state.turn++; state.phase='resolved';
   state.currentPlayer=1-index;
 }
-function matchPayload(room,state) {
+function matchPayload(room,state,userIds) {
   return canonicalMatch({id:state.matchId,source:'remote-vs',ruleset:room.ruleset,target:state.target,
     kaputtLimit:state.kaputtLimit,startingNtb:room.starting_ntb,playerA:state.players[0].name,playerB:state.players[1].name,
-    playerAId:room.host_uuid,playerBId:room.guest_uuid,players:state.players,winner:state.winner,terminalCause:state.winReason,turns:state.turn,
+    playerAId:room.host_uuid,playerBId:room.guest_uuid,userIdA:userIds[0]??null,userIdB:userIds[1]??null,
+    players:state.players,winner:state.winner,terminalCause:state.winReason,turns:state.turn,
     history:state.history,leadChanges:state.leadChanges,extremes:state.extremes,finalNtb:state.ntb});
 }
 export async function roomAction(db,key,token,b,retry=0) {
@@ -176,7 +182,10 @@ export async function roomAction(db,key,token,b,retry=0) {
       .bind(key,b.requestId,revision,index,fingerprint),
   ];
   if (status==='finished' && b.action==='resolve') {
-    statements.push(...matchStatements(db,matchPayload(room,state),
+    const seats=await db.prepare('SELECT player_index,user_id FROM room_seats WHERE room_code=?').bind(key).all();
+    const userIds=[null,null];
+    for(const seat of seats.results)userIds[seat.player_index]=seat.user_id;
+    statements.push(...matchStatements(db,matchPayload(room,state,userIds),
       'EXISTS(SELECT 1 FROM room_actions WHERE room_code=? AND request_id=? AND version=?)',[key,b.requestId,revision]));
   }
   const result=await db.batch(statements);

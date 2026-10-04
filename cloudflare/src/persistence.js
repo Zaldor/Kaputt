@@ -1,6 +1,11 @@
+import engine from '../../lab/engine.js';
+
 export class ApiError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
+// Only hashes ever reach D1. Raw magic-link and session tokens stay in transit.
+export const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(x => x.toString(16).padStart(2, '0')).join('');
+export const randomToken = () => [...crypto.getRandomValues(new Uint8Array(32))].map(x => x.toString(16).padStart(2, '0')).join('');
 export const integer = (value, fallback, min, max, label) => {
   const n = value ?? fallback;
   if (!Number.isInteger(n) || n < min || n > max) throw new ApiError(`Invalid ${label}.`);
@@ -56,10 +61,48 @@ export function matchStatements(db, m, condition = '1', args = []) {
     .bind(m.id,JSON.stringify(history),...args,m.id,JSON.stringify(m)));
   return statements;
 }
-export async function saveMatch(db, body) {
+// Replays a canonical match through the shared engine. Every turn's dice, choice,
+// points, Kaputt flag and NtB chain must equal what lab/engine.js resolves, the
+// running per-seat totals must equal the uploaded totals, and the winner must be
+// derivable from the rules (first to target wins, Kaputt limit loses).
+export function validateHistory(m) {
+  const scores = [0, 0], kaputts = [0, 0];
+  let ntb = m.startingNtb;
+  for (const t of m.history) {
+    const seat = t && typeof t === 'object' ? (t.player === 0 || t.player === 1 ? t.player : t.actor === 'P1' ? 0 : t.actor === 'P2' ? 1 : -1) : -1;
+    const choice = t?.choice ?? t?.action, visible = t?.visibleDie ?? t?.a, hidden = t?.hiddenDie ?? t?.b, before = t?.ntbBefore ?? t?.ntb;
+    if (seat < 0 || (choice !== 'attack' && choice !== 'defense') || !Number.isInteger(visible) || visible < 1 || visible > 6
+      || !Number.isInteger(hidden) || hidden < 1 || hidden > 6 || before !== ntb) throw new ApiError('This match history does not follow the game rules.');
+    const r = engine.resolve(choice, visible, hidden, ntb);
+    if (t.points !== r.points || !!t.kaputt !== r.kaputt || t.ntbAfter !== r.nextNtb || (t.extreme !== undefined && !!t.extreme !== r.extreme))
+      throw new ApiError('This match history does not follow the game rules.');
+    if (t.scoreSelfBefore != null && t.scoreSelfBefore !== scores[seat]) throw new ApiError('This match history does not follow the game rules.');
+    if (t.kaputtSelfBefore != null && t.kaputtSelfBefore !== kaputts[seat]) throw new ApiError('This match history does not follow the game rules.');
+    if (t.scoreOpponentBefore != null && t.scoreOpponentBefore !== scores[1 - seat]) throw new ApiError('This match history does not follow the game rules.');
+    if (t.kaputtOpponentBefore != null && t.kaputtOpponentBefore !== kaputts[1 - seat]) throw new ApiError('This match history does not follow the game rules.');
+    scores[seat] += r.points;
+    if (r.kaputt) kaputts[seat]++;
+    ntb = r.nextNtb;
+    if (t.scoreAfter != null && t.scoreAfter !== scores[seat]) throw new ApiError('This match history does not follow the game rules.');
+    if (t.kaputtAfter != null && t.kaputtAfter !== kaputts[seat]) throw new ApiError('This match history does not follow the game rules.');
+  }
+  if (m.scoreA !== scores[0] || m.scoreB !== scores[1] || m.kaputtA !== kaputts[0] || m.kaputtB !== kaputts[1])
+    throw new ApiError('Match totals do not match the recorded turns.');
+  const winner = scores[0] >= m.target ? 'P1' : scores[1] >= m.target ? 'P2' : kaputts[0] >= m.kaputtLimit ? 'P2' : kaputts[1] >= m.kaputtLimit ? 'P1' : null;
+  if (m.winner !== winner) throw new ApiError('The match result does not match the recorded turns.');
+}
+export async function saveMatch(db, body, user) {
+  if (!user?.id) throw new ApiError('Sign in to save matches.', 401);
   const m = canonicalMatch(body);
+  // Attribution is server-owned: the signed-in session owns seat A and no
+  // opponent was signed in on this request, so client playerAId/playerBId
+  // can never decide who the uploader is. userIdB stays null and standings
+  // fall back to the claimed opponent id or name.
+  m.userIdA = user.id;
+  m.userIdB = null;
   const existing = await db.prepare('SELECT payload_json FROM matches WHERE id=?').bind(m.id).first();
   if (existing && existing.payload_json !== JSON.stringify(m)) throw new ApiError('This match ID already contains a different match.',409);
+  validateHistory(m);
   await db.batch(matchStatements(db,m));
   const saved = await db.prepare('SELECT payload_json FROM matches WHERE id=?').bind(m.id).first();
   if (saved?.payload_json !== JSON.stringify(m)) throw new ApiError('This match ID already contains a different match.',409);
@@ -72,8 +115,8 @@ export async function saveMatch(db, body) {
 // preserves insertion order so same-timestamp rows stay chronological.
 const completed = `WITH completed AS (
  SELECT id,player_a a,player_b b,
-   COALESCE(json_extract(payload_json,'$.playerAId'),'name:'||player_a) aid,
-   COALESCE(json_extract(payload_json,'$.playerBId'),'name:'||player_b) bid,
+   COALESCE(json_extract(payload_json,'$.userIdA'),json_extract(payload_json,'$.playerAId'),'name:'||player_a) aid,
+   COALESCE(json_extract(payload_json,'$.userIdB'),json_extract(payload_json,'$.playerBId'),'name:'||player_b) bid,
    score_a sa,score_b sb,winner,turns,created_at at,rowid seq
  FROM matches WHERE winner IN ('P1','P2') AND source<>'test'
  UNION ALL
@@ -141,7 +184,8 @@ export async function badges(db) {
     MIN(CASE WHEN won THEN turns END) fastest,MAX(turns) longest,MAX(score) best_score,
     ROUND(100.0*SUM(won)/COUNT(*),1) win_rate FROM results WHERE identity NOT LIKE 'bot-%' AND ${legacyBotFilter} GROUP BY identity`).all();
   const turns=await db.prepare(`WITH played AS (
-    SELECT CASE t.actor WHEN 'P1' THEN COALESCE(json_extract(m.payload_json,'$.playerAId'),'name:'||m.player_a) WHEN 'P2' THEN COALESCE(json_extract(m.payload_json,'$.playerBId'),'name:'||m.player_b) ELSE 'name:'||t.actor END identity,
+    SELECT CASE t.actor WHEN 'P1' THEN COALESCE(json_extract(m.payload_json,'$.userIdA'),json_extract(m.payload_json,'$.playerAId'),'name:'||m.player_a)
+      WHEN 'P2' THEN COALESCE(json_extract(m.payload_json,'$.userIdB'),json_extract(m.payload_json,'$.playerBId'),'name:'||m.player_b) ELSE 'name:'||t.actor END identity,
       CASE t.actor WHEN 'P1' THEN m.player_a WHEN 'P2' THEN m.player_b ELSE t.actor END name,
       t.choice,t.extreme,t.kaputt,t.strategic_hold
     FROM turns t JOIN matches m ON m.id=t.match_id WHERE m.source<>'test'
