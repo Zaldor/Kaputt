@@ -8,13 +8,14 @@ export function queueMatch(match) {
   if(!queue.some(m=>m.id===match.id))queue.push(match);
   return store();
 }
-export async function flushMatches(onStatus=()=>{}) {
+export async function flushMatches(onStatus=()=>{},onAuthRequired=()=>{}) {
   if(saving || !queue.length)return;
   saving=true;
   try {
     while(queue.length) {
       const item=queue[0];onStatus(`Saving ${queue.length===1?'match':`${queue.length} matches`}…`);
-      const r=await fetch('/api/matches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item),signal:AbortSignal.timeout(9000)});
+      const r=await fetch('/api/matches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item),credentials:'same-origin',signal:AbortSignal.timeout(9000)});
+      if(r.status===401){onAuthRequired();return;}
       if(!r.ok)throw new Error('Save unavailable');
       const data=await r.json();if(!data.ok)throw new Error('Save unavailable');
       queue=queue.filter(m=>m.id!==item.id);store();

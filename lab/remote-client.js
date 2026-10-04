@@ -31,7 +31,7 @@ export class RemoteClient {
   async request(path,body,token) {
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),9000);
     try {
-      const response=await fetch(path,{method:body?'POST':'GET',cache:'no-store',signal:controller.signal,
+      const response=await fetch(path,{method:body?'POST':'GET',cache:'no-store',signal:controller.signal,credentials:'same-origin',
         headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
       let data;try{data=await response.json();}catch{throw new Error('Online play is unavailable on this host. Open the Cloudflare game.');}
       if(!response.ok||!data.ok){const e=new Error(data.error||'The server could not complete this move.');e.status=response.status;throw e;}
