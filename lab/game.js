@@ -7,8 +7,42 @@ const NOUN=['Fox','Wolf','Hawk','Bear','Lynx','Raven','Viper','Tiger','Eagle','C
 function generateName(){return ADJ[Math.floor(Math.random()*ADJ.length)]+NOUN[Math.floor(Math.random()*NOUN.length)]}
 function getPlayerName(){let n;try{n=localStorage.getItem('kaputt-player-name')}catch{};if(!n||n==='You'){n=generateName();try{localStorage.setItem('kaputt-player-name',n)}catch{}};return n}
 function setPlayerName(n){try{localStorage.setItem('kaputt-player-name',n)}catch{}}
-function showStartScreen(){gameActive=false;const hasName=!!localStorage.getItem('kaputt-player-name')&&localStorage.getItem('kaputt-player-name')!=='You';$('game').dataset.start='true';$('name-step').hidden=hasName;$('mode-step').hidden=!hasName;if(hasName)$('start-player-name').textContent=getPlayerName();$('start-name').value=getPlayerName();}
+function showStartScreen(){
+  gameActive=false;
+  for(const id of ['login-step','inbox-step','username-step'])$(id).hidden=true;
+  if(!session){
+    if(pendingInboxEmail){$('inbox-email').textContent=pendingInboxEmail;$('inbox-step').hidden=false;}
+    else $('login-step').hidden=false;
+    $('name-step').hidden=true;$('mode-step').hidden=true;$('game').dataset.start='true';return;
+  }
+  if(!session.username){
+    $('username-step').hidden=false;$('start-username').value='';$('username-error').hidden=true;
+    $('name-step').hidden=true;$('mode-step').hidden=true;$('game').dataset.start='true';return;
+  }
+  const hasName=!!localStorage.getItem('kaputt-player-name')&&localStorage.getItem('kaputt-player-name')!=='You';$('game').dataset.start='true';$('name-step').hidden=hasName;$('mode-step').hidden=!hasName;if(hasName)$('start-player-name').textContent=getPlayerName();$('start-name').value=getPlayerName();
+  // Forced onboarding: once email + username are done, first-time players get the rules sheet exactly once (modal, so mode buttons stay unreachable until it is dismissed). The flag makes returning players skip it.
+  if(!isOnboarded())openOnboardingRules();}
 function hideStartScreen(){gameActive=true;$('game').dataset.start='false';}
+function isOnboarded(){if(onboarded===null){try{onboarded=localStorage.getItem('kaputt-onboarded')==='1';}catch{onboarded=false;}}return onboarded;}
+function markOnboarded(){onboarded=true;try{localStorage.setItem('kaputt-onboarded','1');}catch{}}
+function openOnboardingRules(){if($('rules-dialog').open)return;$('rules-continue').hidden=false;showDialog('rules-dialog');}
+let session=null,pendingInboxEmail=null,onboarded=null;
+async function refreshSession(){
+  try{
+    const r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(9000)});
+    if(!r.ok)session=null;
+    else{const d=await r.json();session=d.ok?d.user:null;}
+  }catch{session=null;}
+  if(session?.username)setPlayerName(session.username);
+  renderProfile();
+  return session;
+}
+function renderProfile(){
+  const authed=!!session;
+  $('profile-account').hidden=!authed;
+  if(authed){$('profile-email').textContent=session.email;$('profile-username').textContent=session.username?'@'+session.username:'No username yet.';}
+  $('logout').hidden=!authed;
+}
 // Invariant: the home screen is up exactly while gameActive is false; hideStartScreen() is what arms it.
 let gameActive=false;
 let setup={mode:'human',target:100,kaputtLimit:5,startingNtb:1,playerName:getPlayerName(),player2Name:'Player 2'};
@@ -59,6 +93,7 @@ function syncResultPopup(open,ctx){
   const {self,other,outcomeText,detail,action,disabled}=ctx;
   popup.hidden=false;
   popup.className=`result-popup pop-${match.isTerminal?(match.winner===self?'win':'lose'):lastResult?.kaputt?'kaputt':lastResult?.extreme?'extreme':'success'}`;
+  $('result-home').hidden=!match.isTerminal;
   $('result-headline').textContent=resultHeadline(self);
   let math=outcomeText||detail;
   if(match.isTerminal&&online()){
@@ -300,7 +335,7 @@ function uploadMatch(){
   if(!queueMatch(payload()))uploadStatus='Device storage is full. Export this match to keep a copy.';
   else retryUploads();
 }
-function retryUploads(){return flushMatches(message=>{uploadStatus=message;if($('lab-dialog').open)renderLab();});}
+function retryUploads(){return flushMatches(message=>{uploadStatus=message;if($('lab-dialog').open)renderLab();},()=>{uploadStatus='Sign in to save your matches. They stay on this device until then.';if($('lab-dialog').open)renderLab();});}
 function showDialog(id){
   document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
   if(id==='lab-dialog')renderLab();$(id).showModal();enter($(id));
@@ -419,12 +454,48 @@ function primaryAction(){
 }
 $('primary-action').addEventListener('click',primaryAction);
 $('result-action').addEventListener('click',primaryAction);
+$('result-home').addEventListener('click',()=>showStartScreen());
 $('ready').addEventListener('click',()=>{passing=false;$('pass-dialog').close();render();});
 $('pass-dialog').addEventListener('cancel',event=>event.preventDefault());
 for(const [button,dialog]of [['open-menu','menu-dialog'],['open-rules','rules-dialog'],['open-lab','lab-dialog'],['open-room','lobby-dialog']])$(button).addEventListener('click',()=>showDialog(dialog));
+$('rules-continue').addEventListener('click',()=>$('rules-dialog').close());
+$('rules-dialog').addEventListener('close',()=>{$('rules-continue').hidden=true;markOnboarded();});
 $('open-setup').addEventListener('click',newMatch);
-$('open-profile').addEventListener('click',()=>{$('profile-name').value=getPlayerName();showDialog('profile-dialog')});
+$('open-profile').addEventListener('click',()=>{renderProfile();$('profile-name').value=getPlayerName();showDialog('profile-dialog')});
 $('save-profile').addEventListener('click',()=>{const name=$('profile-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('profile-status').textContent='Name saved as '+name;});
+$('logout').addEventListener('click',async()=>{
+  $('logout').disabled=true;
+  try{await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin',signal:AbortSignal.timeout(9000)});}catch{}
+  session=null;pendingInboxEmail=null;$('logout').disabled=false;showStartScreen();$('profile-status').textContent='Signed out.';
+});
+$('email-continue').addEventListener('click',async()=>{
+  const email=$('start-email').value.trim().toLowerCase();$('login-error').hidden=true;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||email.length>254){$('login-error').textContent='Enter a valid email address.';$('login-error').hidden=false;return;}
+  $('email-continue').disabled=true;
+  try{
+    const r=await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({email}),signal:AbortSignal.timeout(9000)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error(d.error||'Could not send the link.');
+    pendingInboxEmail=email;$('inbox-email').textContent=email;$('login-step').hidden=true;$('inbox-step').hidden=false;
+  }catch(error){$('login-error').textContent=error.message;$('login-error').hidden=false;}
+  finally{$('email-continue').disabled=false;}
+});
+$('start-email').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('email-continue').click();}});
+$('back-login').addEventListener('click',()=>{pendingInboxEmail=null;$('inbox-step').hidden=true;$('login-step').hidden=false;$('start-email').focus();});
+$('back-username').addEventListener('click',()=>{$('username-step').hidden=true;$('inbox-step').hidden=true;$('login-step').hidden=false;$('start-email').focus();});
+$('username-continue').addEventListener('click',async()=>{
+  const username=$('start-username').value.trim();$('username-error').hidden=true;
+  if(!/^[a-zA-Z0-9-]{3,16}$/.test(username)){$('username-error').textContent='Use 3 to 16 letters, numbers, or hyphens.';$('username-error').hidden=false;return;}
+  $('username-continue').disabled=true;
+  try{
+    const r=await fetch('/api/auth/username',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username}),signal:AbortSignal.timeout(9000)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error(d.error||'Could not save the username.');
+    session=d.user;setPlayerName(session.username);renderProfile();showStartScreen();
+  }catch(error){$('username-error').textContent=error.message;$('username-error').hidden=false;}
+  finally{$('username-continue').disabled=false;}
+});
+$('start-username').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('username-continue').click();}});
 let lbRequest=0,lbPeriod='all';
 function loadLeaderboard(period='all'){
   lbPeriod=period;
@@ -453,6 +524,7 @@ $('lb-show-bots')?.addEventListener('change',()=>loadLeaderboard(lbPeriod));
 $('open-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('open-leaderboard-menu').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
 $('name-continue').addEventListener('click',()=>{const name=$('start-name').value.trim();if(!name)return;setPlayerName(name);setup.playerName=name;$('name-step').hidden=true;$('mode-step').hidden=false;$('start-player-name').textContent=name;});
+$('back-name').addEventListener('click',()=>{$('name-step').hidden=true;$('mode-step').hidden=false;$('start-player-name').textContent=getPlayerName();});
 $('start-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('name-continue').click();}});
 for(const btn of document.querySelectorAll('.start-mode[data-mode]'))btn.addEventListener('click',()=>{$('mode').value=btn.dataset.mode;$('player-name').value=getPlayerName();modeChanged();showDialog('setup-dialog');});
 $('start-leaderboard').addEventListener('click',()=>{showDialog('leaderboard-dialog');loadLeaderboard();});
@@ -488,8 +560,23 @@ $('llmsave').addEventListener('click',async()=>{const key=$('llmkey').value.trim
 $('llmclear').addEventListener('click',()=>{LLM.clearAllKeys();$('llmkey').value='';refreshModels();});
 $('export').addEventListener('click',()=>exportJson(payload()));$('retry-upload').addEventListener('click',retryUploads);addEventListener('online',retryUploads);document.addEventListener('visibilitychange',()=>{if(!document.hidden)retryUploads();});
 $('game').addEventListener('dice-renderer-lost',()=>{scene?.dispose();scene=null;$('dice-stage').classList.remove('has-webgl');announce('3D rendering is unavailable. Dice values remain accessible.');});
+// Portrait lock: a single attempt on the first user gesture. The orientation API only works in fullscreen on some browsers, so both synchronous throws and promise rejections are swallowed.
+let orientationLockTried=false;
+function lockPortraitOnGesture(){
+  if(orientationLockTried)return;
+  orientationLockTried=true;
+  try{
+    const lock=screen.orientation&&screen.orientation.lock;
+    if(lock){const attempt=lock.call(screen.orientation,'portrait');if(attempt&&typeof attempt.catch==='function')attempt.catch(()=>{});}
+  }catch{}
+}
+addEventListener('pointerdown',lockPortraitOnGesture,{passive:true,once:true});
+addEventListener('keydown',lockPortraitOnGesture,{once:true});
 // Setup renders immediately; optional 3D loading never blocks starting a game.
 displayedValues=publicValues();render();modeChanged();
+const authToken=new URLSearchParams(location.search).get('auth');
+if(authToken&&/^[a-f0-9]{64}$/i.test(authToken)){location.href='/api/auth/verify?token='+encodeURIComponent(authToken);}
+await refreshSession();
 const invite=new URLSearchParams(location.search).get('room');
 if(invite&&/^[A-Z0-9]{4}$/i.test(invite)){$('mode').value='remote';$('join-code').value=invite.toUpperCase();modeChanged();}
 if(remote.current&&!invite){$('mode').value='remote';setup.mode='remote';remote.resume(remote.current);render();hideStartScreen();}else{showStartScreen();}

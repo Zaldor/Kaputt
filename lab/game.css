@@ -91,6 +91,8 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 .start-mode strong{font-size:17px;font-weight:800;letter-spacing:.02em}
 .start-mode span{font-size:13px;font-weight:500;opacity:.8}
 .start-change-name{margin-top:8px;font-size:14px}
+.start-hint{font-size:14px;color:#3d4a7a;margin-top:10px}
+.start-error{color:#b3261e;font-weight:700}
 @media(max-width:360px){.start-logo{width:min(80vw,260px)}.start-tagline{font-size:18px}.start-modes{gap:8px}.start-mode{padding:14px 8px}.start-mode strong{font-size:15px}.start-mode span{font-size:12px}.start-name-row{flex-direction:column;gap:8px}.start-continue{width:100%}}
 @media(min-width:600px){#start-screen{padding:40px}.start-logo{width:min(50vw,380px)}.start-tagline{font-size:26px}.start-modes{gap:16px;max-width:440px;margin:0 auto}.start-mode{padding:24px 16px}.start-mode strong{font-size:19px}.start-mode span{font-size:14px}}
 @media(max-height:630px){#start-screen{gap:10px;padding:16px}.start-logo{width:min(60vw,220px)}.start-tagline{font-size:16px;margin-bottom:6px}.start-mode{padding:12px 8px;gap:4px}.start-mode img{width:26px;height:26px}.start-mode strong{font-size:15px}.start-mode span{font-size:11px}.start-welcome{margin-bottom:10px}}
@@ -103,3 +105,28 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 /* Focused mode setup screens: one Play action, then a Back link that returns to the home screen. */
 .setup-footer{display:flex;flex-direction:column;align-items:stretch}
 .setup-footer .setup-back{text-align:center;margin-top:4px}
+
+/* No text selection UI-wide: only editable fields stay selectable (caret, drag-select, iOS callout). */
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,select,[contenteditable],[contenteditable] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+
+/* Portrait lock for small landscape screens: opaque navy overlay covers the game, which stays in the DOM underneath. */
+#rotate-overlay{position:fixed;inset:0;z-index:80;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;text-align:center;background:#11265d;color:#fff3d3}
+#rotate-overlay img{width:72px;height:72px;filter:invert(78%) sepia(73%) saturate(969%) hue-rotate(350deg);animation:rotate-cue 2.4s ease-in-out infinite}
+#rotate-overlay p{font-size:26px;font-weight:800;letter-spacing:.03em}
+#rotate-overlay .rotate-hint{font-size:16px;font-weight:600;color:#b5bce4;letter-spacing:.01em}
+@keyframes rotate-cue{0%,100%{transform:rotate(0)}50%{transform:rotate(-14deg)}}
+@media (orientation:landscape) and (max-height:600px) and (max-width:1024px){#rotate-overlay{display:flex}.game-shell{visibility:hidden}}
+
+/* Terminal popup: bigger headline, burst entrance, and two actions (Play Again + Home). The card is an absolute overlay inside .play-area, so the game layout and viewport lock never move; both actions share one grid row so the card keeps its height. */
+.result-actions{display:grid;grid-template-columns:1fr;gap:1.8cqw;width:100%;margin-top:1cqw}
+.result-actions>*{width:100%;margin-top:0}
+.result-popup.pop-win .result-actions,.result-popup.pop-lose .result-actions{grid-template-columns:1.5fr 1fr}
+.result-secondary{background:#0e2159;border:1px solid #46609f;color:#cdd6f6;box-shadow:inset 0 2px 2px #2b3f77,inset 0 -6px 10px #061131;flex-direction:row;gap:2cqw}
+.result-secondary>span{font-size:5cqw;font-weight:800;letter-spacing:.05em}
+.result-popup.pop-win .result-card,.result-popup.pop-lose .result-card{border-width:3px;box-shadow:0 18px 44px #050d2ecc,inset 0 1px 0 #ffffff2b}
+.result-popup.pop-win .result-headline,.result-popup.pop-lose .result-headline{font-size:11cqw;letter-spacing:.04em;text-shadow:0 4px 0 #0d1a48,0 0 26px #ffe46b59}
+@keyframes result-burst{0%{opacity:0;transform:translateY(11cqw) scale(.82)}58%{opacity:1;transform:translateY(-2cqw) scale(1.05)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.result-popup.pop-win:not([hidden]) .result-card,.result-popup.pop-lose:not([hidden]) .result-card{animation:result-burst .52s cubic-bezier(.2,.92,.25,1.06) both}
+@media(max-height:740px){.result-popup.pop-win .result-headline,.result-popup.pop-lose .result-headline{font-size:9.6cqw}}
+@media(max-height:630px){.result-popup.pop-win .result-headline,.result-popup.pop-lose .result-headline{font-size:8.6cqw}.result-secondary>span{font-size:4.6cqw}}

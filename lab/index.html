@@ -5,9 +5,28 @@
 <body style="background:#11265d">  <main class="game-shell" id="game" aria-label="KAPUTT game">    <section id="start-screen" aria-label="Start screen">
 <img class="start-logo" src="assets/kaputt-logo.webp" alt="KAPUTT!" width="768" height="214">
 <p class="start-tagline">Roll. Reveal. Rival.</p>
-<div id="name-step">
+<div id="login-step" hidden>
+<label class="start-label" for="start-email">Sign in with email</label>
+<div class="start-name-row"><input id="start-email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" spellcheck="false"><button id="email-continue" class="game-button start-continue">CONTINUE</button></div>
+<p id="login-note" class="start-hint" hidden></p>
+<p id="login-error" class="start-hint start-error" role="alert" hidden></p>
+</div>
+<div id="inbox-step" hidden>
+<p class="start-welcome">Check your inbox</p>
+<p class="start-hint">We sent a sign-in link to <b id="inbox-email"></b>. Open it on this device to finish signing in.</p>
+<button type="button" class="text-button" id="back-login">Use a different email</button>
+</div>
+<div id="username-step" hidden>
+<label class="start-label" for="start-username">Choose a username</label>
+<div class="start-name-row"><input id="start-username" type="text" minlength="3" maxlength="16" placeholder="e.g. SwiftFox" autocomplete="username" autocapitalize="off" spellcheck="false"><button id="username-continue" class="game-button start-continue">CONTINUE</button></div>
+<p class="start-hint">3–16 characters. Your name in online rooms and on the leaderboard.</p>
+<p id="username-error" class="start-hint start-error" role="alert" hidden></p>
+<button type="button" class="text-button" id="back-username">Back</button>
+</div>
+<div id="name-step" hidden>
 <label class="start-label" for="start-name">Choose your name</label>
 <div class="start-name-row"><input id="start-name" type="text" maxlength="16" placeholder="e.g. SwiftFox" autocomplete="off"><button id="name-continue" class="game-button start-continue">CONTINUE</button></div>
+<button type="button" class="text-button" id="back-name">Back</button>
 </div>
 <div id="mode-step" hidden>
 <p class="start-welcome">Welcome back, <b id="start-player-name"></b></p>
@@ -61,10 +80,15 @@
 <p class="result-headline" id="result-headline"></p>
 <p class="result-math" id="result-math"></p>
 <div class="result-badges" id="result-badges" hidden></div>
+<div class="result-actions">
 <button class="game-button primary-action result-action" id="result-action">
 <span id="result-action-label">NEXT TURN</span>
 <img src="assets/icons/arrow-right-bold.svg" alt="">
 </button>
+<button class="game-button result-secondary" id="result-home" hidden>
+<span>HOME</span>
+</button>
+</div>
 </div>
 </div>      <div class="actions-zone">        <button id="primary-action" class="game-button primary-action">
 <span id="primary-label">ROLL THE DICE</span>
@@ -87,7 +111,11 @@
 </div>
 </div>    </section>    <div class="celebration" id="celebration" aria-hidden="true"></div>
 <p class="sr-only" id="game-announcement" aria-live="polite" aria-atomic="true">
-</p>  </main>  <dialog id="menu-dialog" class="sheet">    <div class="sheet-heading">
+</p>  </main>  <div id="rotate-overlay" role="status">
+<img src="assets/icons/arrow-clockwise-bold.svg" alt="" width="72" height="72">
+<p>ROTATE YOUR DEVICE</p>
+<p class="rotate-hint">KAPUTT! plays in portrait mode.</p>
+</div>  <dialog id="menu-dialog" class="sheet">    <div class="sheet-heading">
 <h2>GAME MENU</h2>
 <button class="icon-button" data-close="menu-dialog" aria-label="Close game menu">
 <img src="assets/icons/x-bold.svg" alt="">
@@ -181,7 +209,9 @@
 <p>Multiply the dice. The result must be <b>strictly greater</b> than the Number to Beat. Score the result and set it as the new target. Otherwise, score nothing and take one Kaputt; the target stays put.</p>    <h3>DEFENSE +</h3>
 <p>Score the <b>higher die</b>, set the target to the sum, and take no Kaputt.</p>    <h3>THE EXTREME: 1 & 6</h3>
 <p>Attack becomes <b>36</b>. Defense sets the target to <b>2</b> and scores <b>1</b>. An Attack of 36 still fails against a target of 36. Doubles are normal rolls.</p>    <h3>THE WIN</h3>
-<p>Reach the score target, or let your opponent reach the Kaputt limit. The default is first to 100; five Kaputts and out.</p>  </dialog>  <dialog id="lab-dialog" class="sheet wide-sheet">    <div class="sheet-heading">
+<p>Reach the score target, or let your opponent reach the Kaputt limit. The default is first to 100; five Kaputts and out.</p>
+<button type="button" class="game-button sheet-primary" id="rules-continue" hidden>SKIP &amp; PLAY</button>
+</dialog>  <dialog id="lab-dialog" class="sheet wide-sheet">    <div class="sheet-heading">
 <h2>MATCH LAB</h2>
 <button class="icon-button" data-close="lab-dialog" aria-label="Close match lab">
 <img src="assets/icons/x-bold.svg" alt="">
@@ -220,9 +250,14 @@
 <dialog id="leave-dialog" class="sheet pass-sheet"><h2>LEAVE THIS ROOM?</h2><p>Your opponent will see that you left. Recorded turns stay saved.</p><p class="sheet-note" id="leave-status" role="status"></p><button class="game-button sheet-primary" id="confirm-leave">LEAVE ROOM</button><button class="text-button" data-close="leave-dialog">Keep playing</button></dialog>
 <dialog id="profile-dialog" class="sheet">
 <div class="sheet-heading"><h2>YOUR PROFILE</h2><button class="icon-button" data-close="profile-dialog" aria-label="Close profile"><img src="assets/icons/x-bold.svg" alt=""></button></div>
+<div id="profile-account" hidden>
+<p class="sheet-note" id="profile-email"></p>
+<p class="sheet-note" id="profile-username"></p>
+</div>
 <label>Your display name<input id="profile-name" type="text" maxlength="16" placeholder="Enter your name"></label>
 <p class="sheet-note">This name appears on the leaderboard and in online matches. Stored in this browser only.</p>
 <button type="button" class="small-button full-width" id="save-profile">Save name</button>
+<button type="button" class="small-button full-width" id="logout" hidden>Sign out</button>
 <p id="profile-status" class="sheet-note" role="status"></p>
 </dialog>
 <dialog id="leaderboard-dialog" class="sheet wide-sheet">
